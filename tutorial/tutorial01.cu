@@ -41,12 +41,8 @@ int main(){
     printf("out[0] = %.1f\n", out[0]);
     printf("out[N-1] = %.1f\n", out[N-1]);
 
-    cudaFree(d_a);
-    cudaFree(d_b);
-    cudaFree(d_out);
-    free(a);
-    free(b);
-    free(out);
+    cudaFree(d_a);cudaFree(d_b);cudaFree(d_out);
+    free(a);free(b);free(out);
     return 0;
 }
 

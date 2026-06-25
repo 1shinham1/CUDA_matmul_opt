@@ -19,26 +19,14 @@ __global__ void gemm_naive(float *A, float *B, float *C, int m, int k, int n) {
     }
 }
 
-// CPU에서 정답 계산 (검증용)
-void gemm_cpu(float *A, float *B, float *C, int m, int k, int n) {
-    for (int i = 0; i < m; i++)
-        for (int j = 0; j < n; j++) {
-            float sum = 0.0f;
-            for (int p = 0; p < k; p++)
-                sum += A[i * k + p] * B[p * n + j];
-            C[i * n + j] = sum;
-        }
-}
-
 int main() {
-    float *A, *B, *C, *C_ref;
+    float *A, *B, *C;
     float *d_A, *d_B, *d_C;
 
     // CPU 메모리 할당
     A     = (float*)malloc(sizeof(float) * M * K);
     B     = (float*)malloc(sizeof(float) * K * N);
     C     = (float*)malloc(sizeof(float) * M * N);
-    C_ref = (float*)malloc(sizeof(float) * M * N);
 
     // 초기화
     for (int i = 0; i < M * K; i++) A[i] = 1.0f;
@@ -55,7 +43,7 @@ int main() {
 
     // kernel 실행
     dim3 blockDim(16, 16);          // block당 256개 thread
-    dim3 gridDim((N + 15) / 16, (M + 15) / 16);
+    dim3 gridDim((N + 15) / 16, (M + 15) / 16); // 이 코드에서는 64 X 64 개의 블록 생성
     gemm_naive<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
 
     cudaDeviceSynchronize();
@@ -63,21 +51,10 @@ int main() {
     // GPU → CPU 복사
     cudaMemcpy(C, d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
 
-    // 검증 (CPU 결과와 비교)
-    gemm_cpu(A, B, C_ref, M, K, N);
-    float max_err = 0.0f;
-    for (int i = 0; i < M * N; i++) {
-        float err = C[i] - C_ref[i];
-        if (err < 0) err = -err;
-        if (err > max_err) max_err = err;
-    }
-    printf("최대 오차: %f\n", max_err);
-    printf("C[0] = %.1f (기대값: %.1f)\n", C[0], C_ref[0]);
-    printf("C[M*N-1] = %.1f (기대값: %.1f)\n", C[M*N-1], C_ref[M*N-1]);
 
     // 메모리 해제
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
-    free(A); free(B); free(C); free(C_ref);
+    free(A); free(B); free(C);
     return 0;
 }
 
