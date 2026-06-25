@@ -6,52 +6,19 @@
 #define N 4096  // B의 열
 #define BLOCKSIZE 32
 
-__global__ void gemm_smem(float *A, float *B, float *C, int m, int k, int n) {
-    // 이 블록이 담당하는 C의 타일 위치
-    int cRow = blockIdx.x;
-    int cCol = blockIdx.y;
+__global__ void gemm_coalesced(float *A, float *B, float *C, int m, int k, int n) {
+    int row = blockIdx.x * BLOCKSIZE + (threadIdx.x / BLOCKSIZE); // treadIdx가 증가할때 row 는 일정
+    int col = blockIdx.y * BLOCKSIZE + (threadIdx.x % BLOCKSIZE); // col만 1~31로 증가 즉 가로로 쭉 연속된 메모리를 읽음
 
-    // 블록 안에서 내 위치 (1D threadIdx → 2D)
-    int threadRow = threadIdx.x / BLOCKSIZE;
-    int threadCol = threadIdx.x % BLOCKSIZE;
-
-    // SMEM 선언
-    __shared__ float As[BLOCKSIZE * BLOCKSIZE];
-    __shared__ float Bs[BLOCKSIZE * BLOCKSIZE];
-
-    // 포인터를 내 담당 타일 시작점으로 이동
-    A += cRow * BLOCKSIZE * k;   // 내 블록의 row 시작
-    B += cCol * BLOCKSIZE;       // 내 블록의 col 시작
-    C += cRow * BLOCKSIZE * n + cCol * BLOCKSIZE;
-
-    float tmp = 0.0f;
-
-    // K 방향으로 타일 이동
-    for (int bkIdx = 0; bkIdx < k; bkIdx += BLOCKSIZE) {
-        // GMEM → SMEM 로드 (스레드 하나가 원소 하나씩 담당)
-        As[threadRow * BLOCKSIZE + threadCol] = A[threadRow * k + threadCol];
-        Bs[threadRow * BLOCKSIZE + threadCol] = B[threadRow * n + threadCol];
-
-        // 모든 스레드가 로드 끝날 때까지 대기
-        __syncthreads();
-
-        // 타일 포인터 전진
-        A += BLOCKSIZE;
-        B += BLOCKSIZE * n;
-
-        // SMEM에서 내적 계산
-        for (int dotIdx = 0; dotIdx < BLOCKSIZE; dotIdx++) {
-            tmp += As[threadRow * BLOCKSIZE + dotIdx]
-                 * Bs[dotIdx   * BLOCKSIZE + threadCol];
+    if (row < m && col < n) {
+        float sum = 0.0f;
+        for (int i = 0; i < k; i++) {
+            sum += A[row * k + i] * B[i * n + col];
         }
-
-        // 다음 타일 로드 전 동기화
-        // (느린 스레드가 아직 쓰는 SMEM을 빠른 스레드가 덮어쓰면 안됨)
-        __syncthreads();
+        C[row * n + col] = sum;
     }
-
-    C[threadRow * n + threadCol] = tmp;
 }
+
 
 int main() {
     float *A, *B, *C;
@@ -78,7 +45,7 @@ int main() {
     // kernel 실행
     dim3 blockDim(BLOCKSIZE * BLOCKSIZE); //1024
     dim3 gridDim((N + BLOCKSIZE - 1) / BLOCKSIZE, (M + BLOCKSIZE - 1) / BLOCKSIZE);
-    gemm_smem<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    gemm_coalesced<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
 
     cudaDeviceSynchronize();
     

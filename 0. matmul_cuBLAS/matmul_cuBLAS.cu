@@ -2,9 +2,9 @@
 #include <stdlib.h>
 #include <cublas_v2.h>
 
-#define M 1024
-#define K 1024
-#define N 1024
+#define M 4096
+#define K 4096
+#define N 4096
 
 int main() {
     float *A, *B, *C;
@@ -59,3 +59,5 @@ int main() {
     free(A); free(B); free(C);
     return 0;
 }
+
+//nvcc -arch=sm_89 matmul_cuBLAS.cu -o matmul_cuBLAS -lcublas 로 컴파일해야함
