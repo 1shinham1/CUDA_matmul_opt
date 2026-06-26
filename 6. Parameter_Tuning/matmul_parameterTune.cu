@@ -122,7 +122,7 @@ int main() {
     cudaMemcpy(C, d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
 
     //검증ㅇ용
-    printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
+    //printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
 
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);
@@ -131,5 +131,4 @@ int main() {
 
 
 //지금까지 우리는 Block tiling + micro tiling(register tiling)을 하고 warp을 따로 지정해준적이 없었다. 그래서 서로 다른 warp이 같은 SMEM을 읽는 (bank conflict가 발생)
-// 또 지금까지의 코드는 thread block이 8x8 64개 인데 warp 1개당 thread가 32개로 2개의 warp만 사용하였다.
-//
+// 지금 총 256 thread로 8개의 warp을 사용하여 warp tiling을 하여 (4x2)로 명시적으로 나누어 bank conflict를 막겠다.
