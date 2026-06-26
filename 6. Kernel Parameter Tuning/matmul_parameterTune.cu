@@ -5,15 +5,13 @@
 #define K 4096
 #define N 4096
 
-#define BM 64
-#define BN 64 // ((BM/TR) × (BN/TC) = 8×8 = 64개) 블록 타일을 더 크게 잡아서 SMEM 재사용을 늘리기 위해서
-#define BK 16
-// BM, BN -> 클수록 재사용 증가  (but 스레드 수 고정이라 로드 부담 증가)
-// BK     -> 클수록 SMEM 증가   (but occupancy 감소)
-// tiling에서는 타일의 크기 = thread 수 였어서 As와 Bs의 크기가 같지만 위와 같이 BK는 독립적이기 때문에 작게 잡음
+#define BM 128
+#define BN 128
+#define BK 32
+
 #define TR 8
 #define TC 8
-#define NUM_THREADS ((BM/TR) * (BN/TC))  // 64
+#define NUM_THREADS ((BM/TR) * (BN/TC))  // 256
 
 __global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n) {
     int cRow = blockIdx.x;
@@ -32,11 +30,11 @@ __global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n
     float threadResults[TR * TC] = {0.0f};
 
     // float4 로드를 위한 인덱스 (4개씩 묶어서)
-    int innerRowA = threadIdx.x / (BK / 4);   // 0~3
-    int innerColA = threadIdx.x % (BK / 4);   // 0~3 (float4 단위)
+    int innerRowA = threadIdx.x / (BK / 4);
+    int innerColA = threadIdx.x % (BK / 4);
 
-    int innerRowB = threadIdx.x / (BN / 4);   // 0~3
-    int innerColB = threadIdx.x % (BN / 4);   // 0~15 (float4 단위)
+    int innerRowB = threadIdx.x / (BN / 4);
+    int innerColB = threadIdx.x % (BN / 4);
 
     for (int BK_way_Idx = 0; BK_way_Idx < k; BK_way_Idx += BK) {
         // As 로드: float4로 읽고 전치해서 저장
@@ -115,8 +113,8 @@ int main() {
     cudaMemcpy(d_A, A, sizeof(float) * M * K, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, B, sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
-    dim3 blockDim((BM / TR) * (BN / TC)); // (64/8)*(64/8) = 64 thread
-    dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM); //64 x 64 size
+    dim3 blockDim((BM / TR) * (BN / TC)); // (128/8)*(128/8) = 256 thread
+    dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM); //32 x 32 size
 
     gemm_vectorize<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
     cudaDeviceSynchronize();
@@ -124,7 +122,7 @@ int main() {
     cudaMemcpy(C, d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
 
     //검증ㅇ용
-    //printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
+    printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
 
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);
@@ -132,8 +130,6 @@ int main() {
 }
 
 
-//지금까지 우리는 Block tiling + micro tiling(register tiling)을 했는 데 4090 의 SMEM크기의 한계는. 48KB이나 지금 코드는. 8KB만 사용하며 최대효율을 뽑지 못했다 그렇기에
-//1. BK가 4의 배수                (float4 로드)
-//2. NUM_THREADS가 BK/4의 배수    (루프 나누어떨어짐)
-//3. NUM_THREADS가 32의 배수      (warp 단위 맞춤)
-//와 같은 조건을 만족하는 가장 큰 타일을 만들수 있는 (BM,BN,BK)를 이론적으로 구해서 적용해보려한다.ㄴ
+//지금까지 우리는 Block tiling + micro tiling(register tiling)을 하고 warp을 따로 지정해준적이 없었다. 그래서 서로 다른 warp이 같은 SMEM을 읽는 (bank conflict가 발생)
+// 또 지금까지의 코드는 thread block이 8x8 64개 인데 warp 1개당 thread가 32개로 2개의 warp만 사용하였다.
+//
