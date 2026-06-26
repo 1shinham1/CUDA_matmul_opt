@@ -41,8 +41,7 @@ __global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n
     for (int BK_way_Idx = 0; BK_way_Idx < k; BK_way_Idx += BK) {
         // As 로드: float4로 읽고 전치해서 저장
         for (int loadOffset = 0; loadOffset < BM; loadOffset += NUM_THREADS / (BK / 4)) {
-            float4 tmp = reinterpret_cast<float4*>(
-                &A[(innerRowA + loadOffset) * k + innerColA * 4])[0];
+            float4 tmp = reinterpret_cast<float4*>(&A[(innerRowA + loadOffset) * k + innerColA * 4])[0];
             // 전치 저장: As[col][row]
             As[(innerColA * 4 + 0) * BM + innerRowA + loadOffset] = tmp.x;
             As[(innerColA * 4 + 1) * BM + innerRowA + loadOffset] = tmp.y;
@@ -51,10 +50,8 @@ __global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n
         }
         // Bs 로드: float4로 읽고 그대로 저장 (이미 연속)
         for (int loadOffset = 0; loadOffset < BK; loadOffset += NUM_THREADS / (BN / 4)) {
-            reinterpret_cast<float4*>(
-                &Bs[(innerRowB + loadOffset) * BN + innerColB * 4])[0]
-                = reinterpret_cast<float4*>(
-                &B[(innerRowB + loadOffset) * n + innerColB * 4])[0];
+            reinterpret_cast<float4*>(&Bs[(innerRowB + loadOffset) * BN + innerColB * 4])[0]
+                = reinterpret_cast<float4*>(&B[(innerRowB + loadOffset) * n + innerColB * 4])[0];
         }
 
         __syncthreads();
