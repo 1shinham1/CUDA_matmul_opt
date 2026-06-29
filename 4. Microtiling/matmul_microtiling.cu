@@ -16,8 +16,8 @@
 #define NUM_THREADS ((BM/TR) * (BN/TC))  // 64
 
 __global__ void gemm_microtiling(float *A, float *B, float *C, int m, int k, int n) {
-    int cRow = blockIdx.x;
-    int cCol = blockIdx.y;
+    int cRow = blockIdx.y;
+    int cCol = blockIdx.x;
 
     int threadRow = threadIdx.x / (BN / TC);
     int threadCol = threadIdx.x % (BN / TC);
@@ -39,11 +39,11 @@ __global__ void gemm_microtiling(float *A, float *B, float *C, int m, int k, int
 
     for (int BK_way_Idx = 0; BK_way_Idx < k; BK_way_Idx += BK) {
         // As 로드
-        for (int loadOffset = 0; loadOffset < BM; loadOffset += NUM_THREADS / BK) { // 4 씩 증가
+        for (int loadOffset = 0; loadOffset < BM; loadOffset += NUM_THREADS / BK) { // 4 씩 증가 NUM_THREADS / BK = 4
             As[(innerRowA + loadOffset) * BK + innerColA] = A[(innerRowA + loadOffset) * k + innerColA];
         }
         // Bs 로드
-        for (int loadOffset = 0; loadOffset < BK; loadOffset += NUM_THREADS / BN) { // 1씩 증가
+        for (int loadOffset = 0; loadOffset < BK; loadOffset += NUM_THREADS / BN) { // 1씩 증가 NUM_THREADS / BN = 1
             Bs[(innerRowB + loadOffset) * BN + innerColB] = B[(innerRowB + loadOffset) * n + innerColB];
         }
 

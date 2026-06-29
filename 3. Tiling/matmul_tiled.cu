@@ -8,8 +8,8 @@
 
 __global__ void gemm_smem(float *A, float *B, float *C, int m, int k, int n) {
     // 이 블록이 담당하는 C의 타일 위치
-    int cRow = blockIdx.x;
-    int cCol = blockIdx.y;
+    int cCol = blockIdx.x;
+    int cRow = blockIdx.y;
 
     // 블록 안에서 내 위치 (1D threadIdx → 2D)
     int threadRow = threadIdx.x / BLOCKSIZE;
@@ -105,6 +105,7 @@ int main() {
     free(C_ref);
     ///////////////////////////////////////////////////////////
     */
+    printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
     // 메모리 해제
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);

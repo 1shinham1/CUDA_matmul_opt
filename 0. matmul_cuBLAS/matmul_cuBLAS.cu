@@ -24,40 +24,62 @@ int main() {
     cudaMemcpy(d_A, A, sizeof(float) * M * K, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, B, sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
-    // cuBLAS 핸들 생성
     cublasHandle_t handle;
     cublasCreate(&handle);
 
     const float alpha = 1.0f;
     const float beta  = 0.0f;
 
-    // 워밍업
-    cublasSgemm(handle,
-                CUBLAS_OP_N, CUBLAS_OP_N,
-                N, M, K,
-                &alpha,
-                d_B, N,
-                d_A, K,
-                &beta,
-                d_C, N);
+    int warmup     = 10;
+    int iterations = 100;
+
+    // Warmup
+    for (int i = 0; i < warmup; ++i) {
+        cublasSgemm(handle,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    N, M, K,
+                    &alpha,
+                    d_B, N,
+                    d_A, K,
+                    &beta,
+                    d_C, N);
+    }
     cudaDeviceSynchronize();
 
-    // 실제 실행
-    cublasSgemm(handle,
-                CUBLAS_OP_N, CUBLAS_OP_N,
-                N, M, K,
-                &alpha,
-                d_B, N,
-                d_A, K,
-                &beta,
-                d_C, N);
-    cudaDeviceSynchronize();
+    // 측정
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
-    // 메모리 해제
+    cudaEventRecord(start);
+    for (int i = 0; i < iterations; ++i) {
+        cublasSgemm(handle,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    N, M, K,
+                    &alpha,
+                    d_B, N,
+                    d_A, K,
+                    &beta,
+                    d_C, N);
+    }
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+
+    float avg_time = milliseconds / iterations;
+    float gflops   = (2.0f * M * N * K) / (avg_time * 1e6);
+
+    printf("Average kernel execution time: %.3f ms\n", avg_time);
+    printf("GFLOPS: %.2f\n", gflops);
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
     cublasDestroy(handle);
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);
     return 0;
 }
 
-//nvcc -arch=sm_89 matmul_cuBLAS.cu -o matmul_cuBLAS -lcublas 로 컴파일해야함
+// nvcc -arch=sm_89 matmul_cuBLAS.cu -o matmul_cuBLAS -lcublas

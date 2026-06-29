@@ -83,4 +83,4 @@ int main() {
     return 0;
 }
 
-// nvcc -arch=sm_89 matmul_native.cu -o matmul_naive 이렇게 해야 kernel error가 안남
+// nvcc -arch=sm_89 matmul_naive.cu -o matmul_naive 이렇게 해야 kernel error가 안남

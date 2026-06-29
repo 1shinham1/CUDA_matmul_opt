@@ -5,11 +5,18 @@ int main() {
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
 
-    printf("SM당 최대 SMEM:       %zu KB\n", prop.sharedMemPerBlock / 1024);
-    printf("블록당 최대 스레드:    %d\n", prop.maxThreadsPerBlock);
-    printf("SM당 최대 레지스터:    %d\n", prop.regsPerBlock);
-    printf("Warp 크기:            %d\n", prop.warpSize);
-    printf("SM 수:                %d\n", prop.multiProcessorCount);
+    printf("SM당 최대 SMEM:                     %zu KB\n", prop.sharedMemPerBlock / 1024);
+    printf("블록당 최대 스레드:                     %d\n", prop.maxThreadsPerBlock);
+    printf("SM당 최대 레지스터:                     %d\n", prop.regsPerBlock);
+    printf("Warp 크기:                      %d\n", prop.warpSize);
+    printf("SM 수:                          %d\n", prop.multiProcessorCount);
+
+    printf("SM당 최대 스레드:                       %d\n", prop.maxThreadsPerMultiProcessor);
+    printf("SM당 최대 SMEM:                     %zu B\n", prop.sharedMemPerMultiprocessor);
+    printf("총 글로벌 메모리:                       %zu MB\n", prop.totalGlobalMem / 1024 / 1024);
+    printf("L2 캐시 크기:                       %d KB\n", prop.l2CacheSize / 1024);
+    printf("메모리 버스 폭:                     %d bit\n", prop.memoryBusWidth);
+    printf("Compute Capability:                 %d.%d\n", prop.major, prop.minor);
 }
 /*
 SM당 최대 SMEM:       48 KB

@@ -43,7 +43,7 @@ int main() {
     cudaMemcpy(d_B, B, sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
     // kernel 실행
-    dim3 blockDim(BLOCKSIZE * BLOCKSIZE); //1024
+    dim3 blockDim(BLOCKSIZE * BLOCKSIZE); //1024 연속된 스레드(warp)가 연속된 메모리 주소에 접근하도록 강제하기 위해서 1D로 만듦
     dim3 gridDim((N + BLOCKSIZE - 1) / BLOCKSIZE, (M + BLOCKSIZE - 1) / BLOCKSIZE);
     gemm_coalesced<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
 
