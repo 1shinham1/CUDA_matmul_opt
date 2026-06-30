@@ -77,35 +77,35 @@ int main() {
     // kernel 실행
     dim3 blockDim(BLOCKSIZE * BLOCKSIZE); //1024
     dim3 gridDim((N + BLOCKSIZE - 1) / BLOCKSIZE, (M + BLOCKSIZE - 1) / BLOCKSIZE);
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    // 워밍업
     gemm_smem<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    cudaDeviceSynchronize();
+
+    cudaEventRecord(start);
+    gemm_smem<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
 
     cudaDeviceSynchronize();
     
     // GPU → CPU 복사
     cudaMemcpy(C, d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
 
-    /*// CPU로 계산 검증
-    ////////////////////////////////////////////////////////
-    float *C_ref = (float*)malloc(sizeof(float) * M * N);
-    for (int i = 0; i < M; i++){
-        for (int j = 0; j < N; j++) {
-            float sum = 0.0f;
-            for (int p = 0; p < K; p++)
-                sum += A[i * K + p] * B[p * N + j];
-            C_ref[i * N + j] = sum;
-        }
-    }
-    float max_err = 0.0f;
-    for (int i = 0; i < M * N; i++) {
-    float err = fabsf(C[i] - C_ref[i]);
-    if (err > max_err) max_err = err;
-    }
-    printf("최대 오차: %f\n", max_err);
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
 
-    free(C_ref);
-    ///////////////////////////////////////////////////////////
-    */
+    double flops  = 2.0 * M * N * K;
+    double tflops = flops / (ms / 1000.0) / 1e12;
+
+    printf("Time: %.3f ms\n", ms);
+    printf("TFLOPS: %.2f\n", tflops);
     printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
+
     // 메모리 해제
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);

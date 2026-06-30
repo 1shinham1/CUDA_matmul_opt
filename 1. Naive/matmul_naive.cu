@@ -52,32 +52,39 @@ int main() {
     cudaMemcpy(d_A, A, sizeof(float) * M * K, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, B, sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
+
     // kernel 실행
     dim3 blockDim(32, 32);          // block당 1024개 thread  (1024 스레드/블록)
     dim3 gridDim((N + 31) / 32, (M + 31) / 32);
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    // 워밍업
     gemm_naive<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    cudaDeviceSynchronize();
+
+    cudaEventRecord(start);
+    gemm_naive<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
 
     cudaDeviceSynchronize();
     
     // GPU → CPU 복사
     cudaMemcpy(C, d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
-    /*
-    // 검증 (CPU 결과와 비교)
-    float *C_ref;
-    C_ref = (float*)malloc(sizeof(float) * M * N);
-    gemm_cpu(A, B, C_ref, M, K, N);
-    float max_err = 0.0f;
-    for (int i = 0; i < M * N; i++) {
-        float err = C[i] - C_ref[i];
-        if (err < 0) err = -err;
-        if (err > max_err) max_err = err;
-    }
-    printf("최대 오차: %f\n", max_err);
-    printf("C[0] = %.1f (기대값: %.1f)\n", C[0], C_ref[0]);
-    printf("C[M*N-1] = %.1f (기대값: %.1f)\n", C[M*N-1], C_ref[M*N-1]);
-    free(C_ref);
-    */
-    // 메모리 해제
+    
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+
+    double flops  = 2.0 * M * N * K;
+    double tflops = flops / (ms / 1000.0) / 1e12;
+
+    printf("Time: %.3f ms\n", ms);
+    printf("TFLOPS: %.2f\n", tflops);
+    printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
+    
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);
     return 0;

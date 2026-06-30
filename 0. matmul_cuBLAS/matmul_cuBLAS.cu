@@ -65,10 +65,10 @@ int main() {
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
 
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
 
-    float avg_time = milliseconds / iterations;
+    float avg_time = ms / iterations;
     float gflops   = (2.0f * M * N * K) / (avg_time * 1e6);
 
     printf("Average kernel execution time: %.3f ms\n", avg_time);

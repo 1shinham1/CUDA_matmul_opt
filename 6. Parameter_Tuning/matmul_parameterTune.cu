@@ -116,13 +116,32 @@ int main() {
     dim3 blockDim((BM / TR) * (BN / TC)); // (128/8)*(128/8) = 256 thread
     dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM); //32 x 32 size
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    // 워밍업
     gemm_vectorize<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    cudaDeviceSynchronize();
+
+    cudaEventRecord(start);
+    gemm_vectorize<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
     cudaDeviceSynchronize();
 
     cudaMemcpy(C, d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
 
-    //검증ㅇ용
-    //printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
+    float ms = 0;
+    cudaEventElapsedTime(&ms, start, stop);
+
+    double flops  = 2.0 * M * N * K;
+    double tflops = flops / (ms / 1000.0) / 1e12;
+
+    printf("Time: %.3f ms\n", ms);
+    printf("TFLOPS: %.2f\n", tflops);
+    printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
 
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);
