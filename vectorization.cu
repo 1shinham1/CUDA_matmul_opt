@@ -15,14 +15,14 @@
 #define TC 8
 #define NUM_THREADS ((BM/TR) * (BN/TC))  // 64
 
-__global__ void gemm_microtiling(float *A, float *B, float *C, int m, int k, int n) {
-    int cRow = blockIdx.y;
-    int cCol = blockIdx.x;
+__global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n) {
+    int cRow = blockIdx.x;
+    int cCol = blockIdx.y;
 
     int threadRow = threadIdx.x / (BN / TC);
     int threadCol = threadIdx.x % (BN / TC);
 
-    __shared__ float As[BM * BK];
+    __shared__ float As[BK * BM];
     __shared__ float Bs[BK * BN];
 
     A += cRow * BM * k;
@@ -31,20 +31,27 @@ __global__ void gemm_microtiling(float *A, float *B, float *C, int m, int k, int
 
     float threadResults[TR * TC] = {0.0f};
 
-    int innerRowA = threadIdx.x / BK; //0~3 
-    int innerColA = threadIdx.x % BK; //0~15.        그렇기 때문에 As 로드시 백터로 못읽음 ex)thread 15번과 16번
+    // float4 로드를 위한 인덱스 (4개씩 묶어서)
+    int innerRowA = threadIdx.x / (BK / 4);   // 0~3
+    int innerColA = threadIdx.x % (BK / 4);   // 0~3 (float4 단위)
 
-    int innerRowB = threadIdx.x / BN; // 0 1개
-    int innerColB = threadIdx.x % BN; //0~63
+    int innerRowB = threadIdx.x / (BN / 4);   // 0~3
+    int innerColB = threadIdx.x % (BN / 4);   // 0~15 (float4 단위)
 
     for (int BK_way_Idx = 0; BK_way_Idx < k; BK_way_Idx += BK) {
-        // As 로드
-        for (int loadOffset = 0; loadOffset < BM; loadOffset += NUM_THREADS / BK) { // 4 씩 증가 NUM_THREADS / BK = 4
-            As[(innerRowA + loadOffset) * BK + innerColA] = A[(innerRowA + loadOffset) * k + innerColA];
+        // As 로드: float4로 읽고 전치해서 저장
+        for (int loadOffset = 0; loadOffset < BM; loadOffset += NUM_THREADS / (BK / 4)) {
+            float4 tmp = reinterpret_cast<float4*>(&A[(innerRowA + loadOffset) * k + innerColA * 4])[0];
+            // 전치 저장: As[col][row]
+            As[(innerColA * 4 + 0) * BM + innerRowA + loadOffset] = tmp.x;
+            As[(innerColA * 4 + 1) * BM + innerRowA + loadOffset] = tmp.y;
+            As[(innerColA * 4 + 2) * BM + innerRowA + loadOffset] = tmp.z;
+            As[(innerColA * 4 + 3) * BM + innerRowA + loadOffset] = tmp.w;
         }
-        // Bs 로드
-        for (int loadOffset = 0; loadOffset < BK; loadOffset += NUM_THREADS / BN) { // 1씩 증가 NUM_THREADS / BN = 1
-            Bs[(innerRowB + loadOffset) * BN + innerColB] = B[(innerRowB + loadOffset) * n + innerColB];
+        // Bs 로드: float4로 읽고 그대로 저장 (이미 연속)
+        for (int loadOffset = 0; loadOffset < BK; loadOffset += NUM_THREADS / (BN / 4)) {
+            reinterpret_cast<float4*>(&Bs[(innerRowB + loadOffset) * BN + innerColB * 4])[0]
+                = reinterpret_cast<float4*>(&B[(innerRowB + loadOffset) * n + innerColB * 4])[0];
         }
 
         __syncthreads();
@@ -56,7 +63,8 @@ __global__ void gemm_microtiling(float *A, float *B, float *C, int m, int k, int
             float Atmp[TR], Btmp[TC];
 
             for (int i = 0; i < TR; i++)
-                Atmp[i] = As[(threadRow * TR + i) * BK + dotIdx]; // i 가 증가하면서 As가 연속이 아니고 BK(16)만큼 뛰기 때문에 전치를 시켜서 연속으로 만들어 연속으로 읽고 백터로 만들어 16byte씩 읽어온다
+                Atmp[i] = As[dotIdx * BM + threadRow * TR + i];  // i에 관해서 연속
+                //vectorize 전 코드: Atmp[i] = As[(threadRow * TR + i) * BK + dotIdx];
             for (int j = 0; j < TC; j++)
                 Btmp[j] = Bs[dotIdx * BN + threadCol * TC + j];
 
@@ -68,9 +76,22 @@ __global__ void gemm_microtiling(float *A, float *B, float *C, int m, int k, int
         __syncthreads();
     }
 
+    // C 저장: float4로 벡터화하여 메모리 대역폭을 더 효율적으로 사용
+    for (int i = 0; i < TR; i++) {
+        for (int j = 0; j < TC; j += 4) {
+            reinterpret_cast<float4*>(
+                &C[(threadRow * TR + i) * n + threadCol * TC + j])[0]
+                = {threadResults[i * TC + j],
+                   threadResults[i * TC + j + 1],
+                   threadResults[i * TC + j + 2],
+                   threadResults[i * TC + j + 3]};
+        }
+    }
+    /* float1씩 로드해서 계산했을때
     for (int i = 0; i < TR; i++)
         for (int j = 0; j < TC; j++)
             C[(threadRow * TR + i) * n + threadCol * TC + j] = threadResults[i * TC + j];
+    */
 }
 
 int main() {
@@ -94,17 +115,16 @@ int main() {
     dim3 blockDim((BM / TR) * (BN / TC)); // (64/8)*(64/8) = 64 thread
     dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM); //64 x 64 size
 
-
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
     // 워밍업
-    gemm_microtiling<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    gemm_vectorize<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
     cudaDeviceSynchronize();
 
     cudaEventRecord(start);
-    gemm_microtiling<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    gemm_vectorize<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
 
@@ -120,9 +140,16 @@ int main() {
 
     printf("Time: %.3f ms\n", ms);
     printf("TFLOPS: %.2f\n", tflops);
-    printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
+    //printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
 
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);
     return 0;
 }
+
+
+//지금까지 우리는 Block tiling + micro tiling(register tiling)을 했는 데 4090 의 SMEM크기의 한계는. 48KB이나 지금 코드는. 8KB만 사용하며 최대효율을 뽑지 못했다 그렇기에
+//1. BK가 4의 배수                (float4 로드)
+//2. NUM_THREADS가 BK/4의 배수    (루프 나누어떨어짐)
+//3. NUM_THREADS가 32의 배수      (warp 단위 맞춤)
+//와 같은 조건을 만족하는 가장 큰 타일을 만들수 있는 (BM,BN,BK)를 이론적으로 구해서 적용해보려한다.ㄴ

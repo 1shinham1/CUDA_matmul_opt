@@ -174,7 +174,7 @@ int main() {
 
     printf("Time: %.3f ms\n", ms);
     printf("TFLOPS: %.2f\n", tflops);
-    printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
+    //printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
 
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
     free(A); free(B); free(C);
