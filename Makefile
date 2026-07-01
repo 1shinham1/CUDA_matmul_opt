@@ -1,99 +1,80 @@
 NVCC        := nvcc
 ARCH        := -arch=sm_89
-PROFILE_DIR := ncu_rep_dir
+INCLUDES    := -I include
+PROFILE_DIR := results/profiles
 
-# Sources → Binaries
+# ─── 빌드 타겟 ───────────────────────────────────────────────
 TARGETS := \
-    coalesced \
-    cuBLAS \
-    DeviceProperties \
-    doublebuffer \
-    microtiling \
-    naive \
-    parameterTune \
-    tiled \
-    vectorization \
-    warptiling
+    bin/01_gemm_naive       \
+    bin/02_gemm_coalesced   \
+    bin/03_gemm_shared_memory \
+    bin/04_gemm_microtiling \
+    bin/05_gemm_vectorization \
+    bin/06_gemm_param_tune  \
+    bin/07_gemm_warptiling  \
+    bin/08_gemm_doublebuffer \
+    bin/09_gemm_cublas      \
+    bin/utils_device_info
 
-# Default: build everything
-.PHONY: all clean run
+.PHONY: all clean run profile info
 
-all: $(TARGETS)
+all: bin/ $(TARGETS)
 
-coalesced:      coalesced.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/:
+	mkdir -p bin
 
-cuBLAS:         cuBLAS.cu
-	$(NVCC) $(ARCH) $< -lcublas -o $@
+bin/01_gemm_naive:         src/01_gemm_naive.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
 
-DeviceProperties: DeviceProperties.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/02_gemm_coalesced:     src/02_gemm_coalesced.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
 
-doublebuffer:   doublebuffer.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/03_gemm_shared_memory: src/03_gemm_shared_memory.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
 
-microtiling:    microtiling.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/04_gemm_microtiling:   src/04_gemm_microtiling.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
 
-naive:          naive.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/05_gemm_vectorization: src/05_gemm_vectorization.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
 
-parameterTune:  parameterTune.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/06_gemm_param_tune:    src/06_gemm_param_tune.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
 
-tiled:          tiled.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/07_gemm_warptiling:    src/07_gemm_warptiling.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
 
-vectorization:  vectorization.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/08_gemm_doublebuffer:  src/08_gemm_doublebuffer.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
 
-warptiling:     warptiling.cu
-	$(NVCC) $(ARCH) $< -o $@
+bin/09_gemm_cublas:        src/09_gemm_cublas.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -lcublas -o $@
 
-# Run all benchmarks in optimization order
+bin/utils_device_info:     src/utils_device_info.cu
+	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+
+# ─── 전체 벤치마크 실행 ──────────────────────────────────────
 run: all
-	@echo "=========================================="
-	@echo " CUDA MatMul Benchmark  (sm_89)"
-	@echo "=========================================="
-	@CUBLAS_MS=$$(./cuBLAS | grep "Average kernel" | awk '{print $$5}'); \
-	for entry in \
-	    "1|Naive|./naive" \
-	    "2|Coalesced|./coalesced" \
-	    "3|Tiled|./tiled" \
-	    "4|Microtiling|./microtiling" \
-	    "5|Vectorization|./vectorization" \
-	    "6|Parameter Tuning|./parameterTune" \
-	    "7|Warptiling|./warptiling" \
-	    "8|Double Buffering|./doublebuffer" \
-	; do \
-	    NUM=$$(echo $$entry | cut -d'|' -f1); \
-	    NAME=$$(echo $$entry | cut -d'|' -f2); \
-	    CMD=$$(echo $$entry | cut -d'|' -f3); \
-	    OUTPUT=$$($$CMD); \
-	    MS=$$(echo "$$OUTPUT" | grep "^Time:" | awk '{print $$2}'); \
-	    PCT=$$(awk "BEGIN{printf \"%.1f\", $$CUBLAS_MS/$$MS*100}"); \
-	    echo "[$$NUM] $$NAME"; \
-	    echo "$$OUTPUT"; \
-	    echo "vs cuBLAS: $$PCT%"; \
-	    echo "=========================================="; \
-	done; \
-	echo "[*] cuBLAS"; \
-	./cuBLAS; \
-	echo "vs cuBLAS: 100.0%"; \
-	echo "=========================================="
+	@bash scripts/benchmark.sh
 
-ncurep: all
+# ─── GPU 정보 출력 ───────────────────────────────────────────
+info: bin/utils_device_info
+	@./bin/utils_device_info
+
+# ─── NCU 프로파일링 ──────────────────────────────────────────
+profile: all
 	@mkdir -p $(PROFILE_DIR)
-	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/naive         ./naive
-	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/coalesced     ./coalesced
-	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/tiled         ./tiled
-	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/microtiling   ./microtiling
-	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/vectorization ./vectorization
-	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/parameterTune ./parameterTune
-	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/warptiling    ./warptiling
-	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/doublebuffer  ./doublebuffer
-	ncu --set full --launch-skip 10 --launch-count 1 -o $(PROFILE_DIR)/cuBLAS        ./cuBLAS
+	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/01_naive          ./bin/01_gemm_naive
+	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/02_coalesced      ./bin/02_gemm_coalesced
+	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/03_shared_memory  ./bin/03_gemm_shared_memory
+	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/04_microtiling    ./bin/04_gemm_microtiling
+	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/05_vectorization  ./bin/05_gemm_vectorization
+	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/06_param_tune     ./bin/06_gemm_param_tune
+	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/07_warptiling     ./bin/07_gemm_warptiling
+	ncu --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/08_doublebuffer   ./bin/08_gemm_doublebuffer
+	ncu --set full --launch-skip 10 --launch-count 1 -o $(PROFILE_DIR)/09_cublas        ./bin/09_gemm_cublas
 
+# ─── 정리 ────────────────────────────────────────────────────
 clean:
-	rm -f $(TARGETS)
+	rm -rf bin/
 	rm -rf $(PROFILE_DIR)

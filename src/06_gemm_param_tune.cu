@@ -1,9 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#define M 4096
-#define K 4096
-#define N 4096
+#include "gemm.h"
 
 #define BM 128
 #define BN 128

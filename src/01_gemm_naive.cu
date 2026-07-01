@@ -1,9 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#define M 4096  // A의 행
-#define K 4096  // A의 열, B의 행
-#define N 4096  // B의 열
+#include "gemm.h"
 
 // Naive GEMM kernel - thread 하나가 C의 원소 하나 담당
 __global__ void gemm_naive(float *A, float *B, float *C, int m, int k, int n) {

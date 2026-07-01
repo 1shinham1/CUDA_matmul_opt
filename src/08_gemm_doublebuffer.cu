@@ -1,10 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <cuda_pipeline.h>
+#include "gemm.h"
 
-#define M 4096
-#define K 4096
-#define N 4096
+
 
 #define BM 128
 #define BN 128

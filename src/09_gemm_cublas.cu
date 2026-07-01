@@ -1,10 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <cublas_v2.h>
-
-#define M 4096
-#define K 4096
-#define N 4096
+#include "gemm.h"
 
 int main() {
     float *A, *B, *C;

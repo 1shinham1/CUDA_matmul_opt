@@ -1,5 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include "gemm.h"
 
 int main() {
     cudaDeviceProp prop;

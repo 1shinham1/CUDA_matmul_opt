@@ -1,0 +1,10 @@
+kernel,time_ms,tflops,cublas_pct
+01_Naive,199.575,0.69,1.1
+02_Coalesced,26.880,5.11,8.2
+03_SharedMemory,22.014,6.24,10.0
+04_Microtiling,3.356,40.95,65.3
+05_Vectorization,2.981,46.11,73.6
+06_ParameterTuning,2.803,49.03,78.2
+07_WarpTiling,2.582,53.24,84.9
+08_DoubleBuffering,2.409,57.05,91.0
+09_cuBLAS,2.193,62.66,100.0

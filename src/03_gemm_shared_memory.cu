@@ -1,9 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#define M 4096  // A의 행
-#define K 4096  // A의 열, B의 행
-#define N 4096  // B의 열
+#include "gemm.h"
 #define BLOCKSIZE 32
 
 __global__ void gemm_smem(float *A, float *B, float *C, int m, int k, int n) {
