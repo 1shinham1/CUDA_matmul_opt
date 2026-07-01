@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# 빠른 실행: make build 후 특정 커널만 돌릴 때
-# 사용법:  ./run.sh [번호]
-#   ./run.sh       → 전체 벤치마크
-#   ./run.sh 3     → 03_gemm_shared_memory 만 실행
-
+# 사용법:  ./run.sh       → 전체 벤치마크
+#          ./run.sh 5     → 05_gemm_vectorization 만 실행
+#          ./run.sh 12    → 12_gemm_tc_warptiling 만 실행
+ 
 if [ -z "$1" ]; then
     make run
 else

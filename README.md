@@ -1,6 +1,7 @@
 # GEMM Optimization — CUDA
 
-4096×4096 FP32 행렬 곱셈(GEMM)을 단계별로 최적화하며 cuBLAS 성능에 근접하는 과정을 담은 프로젝트입니다.
+4096×4096 FP32 행렬 곱셈(GEMM)을 단계별로 최적화하며 cuBLAS 성능에 근접하는 과정을 담은 프로젝트입니다.  
+CUDA Core(FP32)와 Tensor Core(TF32, WMMA API) 두 가지 경로로 최적화합니다.
 
 ---
 
@@ -8,8 +9,8 @@
 
 | 항목 | 버전 |
 |------|------|
-| CUDA Toolkit | 13.3 사용 |
-| GPU Compute Capability | sm_89 (RTX 4090 기준) |
+| CUDA Toolkit | 13.3 |
+| GPU | RTX 4090 (sm_89) |
 | nvcc | CUDA Toolkit에 포함 |
 
 ---
@@ -17,6 +18,9 @@
 ## 빌드 & 실행
 
 ```bash
+# 실행 권한 부여 (최초 1회)
+chmod +x run.sh scripts/benchmark.sh
+
 # 전체 빌드
 make all
 
@@ -24,7 +28,8 @@ make all
 make run
 
 # 특정 커널만 실행
-./run.sh 5          # 05_gemm_vectorization
+./run.sh 5      # 05_gemm_vectorization
+./run.sh 12     # 12_gemm_tc_warptiling
 
 # GPU 스펙 확인
 make info
@@ -40,6 +45,8 @@ make clean
 
 ## 최적화 단계
 
+### CUDA Core (FP32)
+
 | # | 파일 | 핵심 기법 | 주요 포인트 |
 |---|------|-----------|-------------|
 | 01 | `01_gemm_naive.cu` | 기본 구현 | thread 1개 = C 원소 1개, coalescing 없음 |
@@ -50,7 +57,19 @@ make clean
 | 06 | `06_gemm_param_tune.cu` | 파라미터 튜닝 | BM=BN=128, BK=32 → SMEM 32KB, thread 256개 |
 | 07 | `07_gemm_warptiling.cu` | Warp Tiling | warp을 4×2로 명시 분할, bank conflict 감소 |
 | 08 | `08_gemm_doublebuffer.cu` | Double Buffering | `__pipeline_memcpy_async`로 DMA와 연산 오버랩 |
-| 09 | `09_gemm_cublas.cu` | cuBLAS | 비교 기준선 (100회 평균) |
+| 09 | `09_gemm_cublas.cu` | cuBLAS FP32 | 비교 기준선 (100회 평균) |
+
+### Tensor Core (TF32, WMMA API)
+
+| # | 파일 | 핵심 기법 | 주요 포인트 |
+|---|------|-----------|-------------|
+| 10 | `10_gemm_tc_naive.cu` | 기본 WMMA | warp 1개 = 16×16 타일 1개, GMEM 직접 접근 |
+| 11 | `11_gemm_tc_shared_memory.cu` | Shared Memory | GMEM → SMEM 후 fragment 로드 |
+| 12 | `12_gemm_tc_warptiling.cu` | Fragment Tiling | warp 1개가 2×2 fragment 처리, arithmetic intensity 향상 |
+| 13 | `13_gemm_tc_doublebuffer.cu` | Double Buffering | 버퍼 2개로 로드와 연산 오버랩 |
+| 14 | `14_gemm_tc_vectorization.cu` | Vectorization | 128-bit 로드/스토어 |
+
+각 Tensor Core 파일은 실행 시 cuBLAS TF32와 정확도(relative error)도 함께 출력합니다.
 
 ---
 
@@ -61,12 +80,18 @@ make clean
 ```
 kernel,time_ms,tflops,cublas_pct
 01_Naive,128.3,2.13,12.3
-02_Coalesced,89.1,3.07,17.7
 ...
 09_cuBLAS,15.8,17.32,100.0
+10_TC_Naive,30.1,9.11,45.2
+...
+TC_cuBLAS_TF32,12.4,22.08,100.0
 ```
 
 NCU 프로파일은 `make profile` 후 `results/profiles/` 에 `.ncu-rep` 형태로 저장됩니다.
+
+```bash
+ncu-ui results/profiles/01_naive.ncu-rep
+```
 
 ---
 
@@ -101,9 +126,15 @@ gemm-optimization/
 │   ├── 07_gemm_warptiling.cu
 │   ├── 08_gemm_doublebuffer.cu
 │   ├── 09_gemm_cublas.cu
+│   ├── 10_gemm_tc_naive.cu
+│   ├── 11_gemm_tc_shared_memory.cu
+│   ├── 12_gemm_tc_warptiling.cu
+│   ├── 13_gemm_tc_doublebuffer.cu
+│   ├── 14_gemm_tc_vectorization.cu
 │   └── utils_device_info.cu
 ├── include/
-│   └── gemm.h
+│   ├── gemm.h       ← CUDA Core 공통 (M/K/N 상수)
+│   └── gemm_tc.h    ← Tensor Core 공통 (WMMA 상수, CUDA_CHECK, 초기화/검증)
 ├── scripts/
 │   └── benchmark.sh
 └── results/
