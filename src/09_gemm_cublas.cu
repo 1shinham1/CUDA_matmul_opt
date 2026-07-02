@@ -24,11 +24,9 @@ int main() {
     const float alpha = 1.0f;
     const float beta  = 0.0f;
 
-    int warmup     = 10;
-    int iterations = 100;
 
     // Warmup
-    for (int i = 0; i < warmup; ++i) {
+    for (int i = 0; i < WARM_UP; ++i) {
         cublasSgemm(handle,
                     CUBLAS_OP_N, CUBLAS_OP_N,
                     N, M, K,
@@ -46,7 +44,7 @@ int main() {
     cudaEventCreate(&stop);
 
     cudaEventRecord(start);
-    for (int i = 0; i < iterations; ++i) {
+    for (int i = 0; i < N_ITERS; ++i) {
         cublasSgemm(handle,
                     CUBLAS_OP_N, CUBLAS_OP_N,
                     N, M, K,
@@ -62,7 +60,7 @@ int main() {
     float ms = 0;
     cudaEventElapsedTime(&ms, start, stop);
 
-    float avg_time = ms / iterations;
+    float avg_time = ms / N_ITERS;
     float gflops   = (2.0f * M * N * K) / (avg_time * 1e6);
 
     printf("Average kernel execution time: %.3f ms\n", avg_time);

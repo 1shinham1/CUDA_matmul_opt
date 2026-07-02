@@ -69,20 +69,20 @@ info: bin/utils_device_info
 # ─── NCU 프로파일링 ──────────────────────────────────────────
 profile: all
 	@mkdir -p $(PROFILE_DIR)
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/01_naive           ./bin/01_gemm_naive
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/02_coalesced       ./bin/02_gemm_coalesced
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/03_shared_memory   ./bin/03_gemm_shared_memory
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/04_microtiling     ./bin/04_gemm_microtiling
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/05_vectorization   ./bin/05_gemm_vectorization
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/06_param_tune      ./bin/06_gemm_param_tune
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/07_warptiling      ./bin/07_gemm_warptiling
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/08_doublebuffer    ./bin/08_gemm_doublebuffer
-	ncu -f --set full --launch-skip 10 --launch-count 1 -o $(PROFILE_DIR)/09_cublas         ./bin/09_gemm_cublas
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/10_tc_naive        ./bin/10_gemm_tc_naive
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/11_tc_shared_mem   ./bin/11_gemm_tc_shared_memory
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/12_tc_warptiling   ./bin/12_gemm_tc_warptiling
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/13_tc_doublebuffer ./bin/13_gemm_tc_doublebuffer
-	ncu -f --set full --launch-skip 1 --launch-count 1 -o $(PROFILE_DIR)/14_tc_vectorization ./bin/14_gemm_tc_vectorization
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/01_naive           ./bin/01_gemm_naive
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/02_coalesced       ./bin/02_gemm_coalesced
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/03_shared_memory   ./bin/03_gemm_shared_memory
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/04_microtiling     ./bin/04_gemm_microtiling
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/05_vectorization   ./bin/05_gemm_vectorization
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/06_param_tune      ./bin/06_gemm_param_tune
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/07_warptiling      ./bin/07_gemm_warptiling
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/08_doublebuffer    ./bin/08_gemm_doublebuffer
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/09_cublas         ./bin/09_gemm_cublas
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/10_tc_naive        ./bin/10_gemm_tc_naive
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/11_tc_shared_mem   ./bin/11_gemm_tc_shared_memory
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/12_tc_warptiling   ./bin/12_gemm_tc_warptiling
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/13_tc_doublebuffer ./bin/13_gemm_tc_doublebuffer
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/14_tc_vectorization ./bin/14_gemm_tc_vectorization
 
 # ─── 정리 ────────────────────────────────────────────────────
 clean:

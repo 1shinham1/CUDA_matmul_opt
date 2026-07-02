@@ -135,28 +135,28 @@ int main(int argc, char **argv) {
     CUDA_CHECK(cudaMemset(d_C, 0, sizeof(float) * M_pad * N_pad));
     CUDA_CHECK(cudaMemset(d_C_cublas, 0, sizeof(float) * M_pad * N_pad));
 
-    warp_tiling_tensor_mat_mul(d_A, d_B, d_C, M_pad, N_pad, K_pad);
+    for (int i = 0; i < WARM_UP; ++i)
+        warp_tiling_tensor_mat_mul(d_A, d_B, d_C, M_pad, N_pad, K_pad);
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    const int n_iters = 10;
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
 
     CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < n_iters; ++i)
+    for (int i = 0; i < N_ITERS; ++i)
         warp_tiling_tensor_mat_mul(d_A, d_B, d_C, M_pad, N_pad, K_pad);
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
 
     float ms = 0.0f;
     CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
-    ms /= n_iters;
+    ms /= N_ITERS;
 
     double gflops = compute_gflops(M_pad, N_pad, K_pad, ms);
     printf("[Warp Tiling WMMA TF32] time = %.4f ms  |  GFLOPS = %.2f\n", ms, gflops);
 
-    run_cublas_and_verify(d_A, d_B, d_C, d_C_cublas, M_pad, K_pad, N_pad, gflops, n_iters);
+    run_cublas_and_verify(d_A, d_B, d_C, d_C_cublas, M_pad, K_pad, N_pad, gflops, N_ITERS);
 
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));

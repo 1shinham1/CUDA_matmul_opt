@@ -9,3 +9,6 @@
 #define M 4096
 #define K 4096
 #define N 4096
+
+#define WARM_UP 5
+#define N_ITERS  30

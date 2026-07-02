@@ -95,11 +95,13 @@ int main() {
     cudaEventCreate(&stop);
 
     // 워밍업
-    gemm_microtiling<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    for (int i = 0; i < WARM_UP; ++i)
+        gemm_microtiling<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
     cudaDeviceSynchronize();
 
     cudaEventRecord(start);
-    gemm_microtiling<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
+    for (int i = 0; i < N_ITERS; ++i)
+        gemm_microtiling<<<gridDim, blockDim>>>(d_A, d_B, d_C, M, K, N);
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
 
@@ -109,6 +111,7 @@ int main() {
 
     float ms = 0;
     cudaEventElapsedTime(&ms, start, stop);
+    ms /= N_ITERS;
 
     double flops  = 2.0 * M * N * K;
     double tflops = flops / (ms / 1000.0) / 1e12;

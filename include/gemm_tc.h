@@ -9,6 +9,8 @@
 #include <cublas_v2.h> //cuBLAS
 #include <cuda_pipeline.h> //__pipeline_memcpy_async()
 
+#define WARM_UP 5
+#define N_ITERS  30
 // ─── WMMA 타일 크기 (TF32 고정값) ────────────────────────────
 // TF32: matrix_a/b = 16x16x8, accumulator = 16x16
 static const int WMMA_M = 16; // C, A의 타일 행 수
@@ -73,7 +75,7 @@ inline void init_host_matrices(
 inline void run_cublas_and_verify(
     float *d_A, float *d_B, float *d_C, float *d_C_cublas,
     int M_pad, int K_pad, int N_pad,
-    double gflops_kernel, int n_iters = 10)
+    double gflops_kernel, int n_iters = N_ITERS)
 {
     cublasHandle_t handle;
     CUBLAS_CHECK(cublasCreate(&handle));
@@ -93,7 +95,7 @@ inline void run_cublas_and_verify(
     CUDA_CHECK(cudaEventCreate(&stop));
 
     CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < n_iters; ++i) {
+    for (int i = 0; i < N_ITERS; ++i) {
         CUBLAS_CHECK(cublasGemmEx(
             handle, CUBLAS_OP_N, CUBLAS_OP_N, N_pad, M_pad, K_pad,
             &alpha, d_B, CUDA_R_32F, N_pad, d_A, CUDA_R_32F, K_pad,
@@ -105,7 +107,7 @@ inline void run_cublas_and_verify(
 
     float ms = 0.0f;
     CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
-    ms /= n_iters;
+    ms /= N_ITERS;
 
     double gflops_cublas = compute_gflops(M_pad, N_pad, K_pad, ms);
     printf("[cuBLAS TF32]  time = %.4f ms  |  GFLOPS = %.2f\n", ms, gflops_cublas);
