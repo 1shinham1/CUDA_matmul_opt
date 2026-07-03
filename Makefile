@@ -2,6 +2,7 @@ NVCC        := nvcc
 ARCH        := -arch=sm_89
 INCLUDES    := -I include
 PROFILE_DIR := results/profiles
+OMP         := -Xcompiler -fopenmp
 
 # ─── 빌드 타겟 ───────────────────────────────────────────────
 TARGETS := \
@@ -29,31 +30,31 @@ bin/:
 	mkdir -p bin
 
 bin/01_gemm_naive:         src/01_gemm_naive.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
 
 bin/02_gemm_coalesced:     src/02_gemm_coalesced.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
 
 bin/03_gemm_shared_memory: src/03_gemm_shared_memory.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
 
 bin/04_gemm_microtiling:   src/04_gemm_microtiling.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
 
 bin/05_gemm_vectorization: src/05_gemm_vectorization.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
 
 bin/06_gemm_param_tune:    src/06_gemm_param_tune.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
 
 bin/07_gemm_warptiling:    src/07_gemm_warptiling.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
 
 bin/08_gemm_doublebuffer:  src/08_gemm_doublebuffer.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
 
 bin/09_gemm_cublas:        src/09_gemm_cublas.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -lcublas -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/utils_device_info:     src/utils_device_info.cu
 	$(NVCC) $(ARCH) $(INCLUDES) $< -o $@
@@ -92,16 +93,16 @@ clean:
 
 # ─── Tensor Core 타겟 ────────────────────────────────────────
 bin/10_gemm_tc_naive:        src/10_gemm_tc_naive.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -lcublas -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/11_gemm_tc_shared_memory: src/11_gemm_tc_shared_memory.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -lcublas -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/12_gemm_tc_warptiling:   src/12_gemm_tc_warptiling.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -lcublas -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/13_gemm_tc_doublebuffer: src/13_gemm_tc_doublebuffer.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -lcublas -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/14_gemm_tc_vectorization: src/14_gemm_tc_vectorization.cu
-	$(NVCC) $(ARCH) $(INCLUDES) $< -lcublas -o $@
+	$(NVCC) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@

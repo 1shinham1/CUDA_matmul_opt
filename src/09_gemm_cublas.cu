@@ -1,22 +1,17 @@
 #include "gemm.h"
 
 int main() {
-    float *A, *B, *C;
+    std::vector<float> A(M * K), B(K * N), C(M * N);
     float *d_A, *d_B, *d_C;
 
-    A = (float*)malloc(sizeof(float) * M * K);
-    B = (float*)malloc(sizeof(float) * K * N);
-    C = (float*)malloc(sizeof(float) * M * N);
-
-    for (int i = 0; i < M * K; i++) A[i] = 1.0f;
-    for (int i = 0; i < K * N; i++) B[i] = 1.0f;
+    init_host_matrices(A.data(), B.data(), M, K, N);
 
     cudaMalloc((void**)&d_A, sizeof(float) * M * K);
     cudaMalloc((void**)&d_B, sizeof(float) * K * N);
     cudaMalloc((void**)&d_C, sizeof(float) * M * N);
 
-    cudaMemcpy(d_A, A, sizeof(float) * M * K, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_B, B, sizeof(float) * K * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_A, A.data(), sizeof(float) * M * K, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, B.data(), sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
     cublasHandle_t handle;
     cublasCreate(&handle);
@@ -66,11 +61,16 @@ int main() {
     printf("Average kernel execution time: %.3f ms\n", avg_time);
     printf("GFLOPS: %.2f\n", gflops);
 
+    // GPU → CPU 복사 후 CPU 참조값과 비교
+    cudaMemcpy(C.data(), d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
+    std::vector<float> C_ref(M * N);
+    gemm_cpu_cached(A.data(), B.data(), C_ref.data(), M, K, N);
+    verify_against_cpu(C.data(), C_ref.data(), (size_t)M * N);
+
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
     cublasDestroy(handle);
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
-    free(A); free(B); free(C);
     return 0;
 }
 

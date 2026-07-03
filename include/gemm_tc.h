@@ -132,3 +132,57 @@ inline void run_cublas_and_verify(
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
 }
+
+// ─── CPU 참조 계산 (검증용, OpenMP로 병렬화) ─────────────────────
+inline void gemm_cpu(const float *A, const float *B, float *C, int m, int k, int n) {
+    #pragma omp parallel for
+    for (int i = 0; i < m; ++i) {
+        for (int j = 0; j < n; ++j) {
+            float sum = 0.0f;
+            for (int p = 0; p < k; ++p)
+                sum += A[i * k + p] * B[p * n + j];
+            C[i * n + j] = sum;
+        }
+    }
+}
+
+// ─── CPU 참조값 캐싱 ────────────────────────────────────────────
+// gemm.h의 init_host_matrices와 동일한 seed/순서로 채워지므로 (패딩이 없는
+// 경우) CUDA Core 쪽에서 만든 캐시를 그대로 재사용할 수 있다.
+inline void gemm_cpu_cached(const float *A, const float *B, float *C, int m, int k, int n) {
+    char path[256];
+    snprintf(path, sizeof(path), "bin/.cpu_ref_%dx%dx%d.bin", m, k, n);
+
+    FILE *f = fopen(path, "rb");
+    if (f) {
+        size_t got = fread(C, sizeof(float), (size_t)m * n, f);
+        fclose(f);
+        if (got == (size_t)m * n) {
+            printf("[CPU 참조값 캐시 사용: %s]\n", path);
+            return;
+        }
+    }
+
+    gemm_cpu(A, B, C, m, k, n);
+
+    f = fopen(path, "wb");
+    if (f) {
+        fwrite(C, sizeof(float), (size_t)m * n, f);
+        fclose(f);
+    }
+}
+
+// ─── GPU 결과 vs CPU 참조값 상대 오차 계산 & 출력 ─────────────────
+// TC 커널은 TF32(가수 10비트)로 truncate 후 연산하므로 FP32 CPU 참조값과
+// 비교하면 truncation 자체의 오차가 섞여 CUDA Core보다 임계값을 느슨하게 잡는다.
+inline void verify_against_cpu(const float *C, const float *C_ref, size_t size) {
+    double diff_norm = 0.0, ref_norm = 0.0;
+    for (size_t i = 0; i < size; ++i) {
+        double d = (double)C[i] - (double)C_ref[i];
+        diff_norm += d * d;
+        ref_norm  += (double)C_ref[i] * (double)C_ref[i];
+    }
+    double rel_err = std::sqrt(diff_norm) / (std::sqrt(ref_norm) + 1e-12);
+    printf("Relative error vs CPU: %.6e %s\n", rel_err,
+           (rel_err < 5e-2) ? "(OK)" : "(WARNING: 오차가 큼)");
+}

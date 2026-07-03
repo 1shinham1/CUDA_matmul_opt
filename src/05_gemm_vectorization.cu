@@ -90,22 +90,17 @@ __global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n
 }
 
 int main() {
-    float *A, *B, *C;
+    std::vector<float> A(M * K), B(K * N), C(M * N);
     float *d_A, *d_B, *d_C;
 
-    A = (float*)malloc(sizeof(float) * M * K);
-    B = (float*)malloc(sizeof(float) * K * N);
-    C = (float*)malloc(sizeof(float) * M * N);
-
-    for (int i = 0; i < M * K; i++) A[i] = 1.0f;
-    for (int i = 0; i < K * N; i++) B[i] = 1.0f;
+    init_host_matrices(A.data(), B.data(), M, K, N);
 
     cudaMalloc((void**)&d_A, sizeof(float) * M * K);
     cudaMalloc((void**)&d_B, sizeof(float) * K * N);
     cudaMalloc((void**)&d_C, sizeof(float) * M * N);
 
-    cudaMemcpy(d_A, A, sizeof(float) * M * K, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_B, B, sizeof(float) * K * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_A, A.data(), sizeof(float) * M * K, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, B.data(), sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
     dim3 blockDim((BM / TR) * (BN / TC)); // (64/8)*(64/8) = 64 thread
     dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM); //64 x 64 size
@@ -127,7 +122,7 @@ int main() {
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(C, d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
+    cudaMemcpy(C.data(), d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
 
     float ms = 0;
     cudaEventElapsedTime(&ms, start, stop);
@@ -138,10 +133,12 @@ int main() {
 
     printf("Time: %.3f ms\n", ms);
     printf("TFLOPS: %.2f\n", tflops);
-    //printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
+
+    std::vector<float> C_ref(M * N);
+    gemm_cpu_cached(A.data(), B.data(), C_ref.data(), M, K, N);
+    verify_against_cpu(C.data(), C_ref.data(), (size_t)M * N);
 
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
-    free(A); free(B); free(C);
     return 0;
 }
 

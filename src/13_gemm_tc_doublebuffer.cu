@@ -177,6 +177,12 @@ int main(int argc, char **argv) {
 
     run_cublas_and_verify(d_A, d_B, d_C, d_C_cublas, M_pad, K_pad, N_pad, gflops, N_ITERS);
 
+    // CPU 참조값과 비교
+    std::vector<float> h_C(M_pad * N_pad), C_ref(M_pad * N_pad);
+    CUDA_CHECK(cudaMemcpy(h_C.data(), d_C, sizeof(float) * M_pad * N_pad, cudaMemcpyDeviceToHost));
+    gemm_cpu_cached(h_A.data(), h_B.data(), C_ref.data(), M_pad, K_pad, N_pad);
+    verify_against_cpu(h_C.data(), C_ref.data(), (size_t)M_pad * N_pad);
+
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
     CUDA_CHECK(cudaFree(d_A)); CUDA_CHECK(cudaFree(d_B));

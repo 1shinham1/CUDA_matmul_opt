@@ -14,29 +14,12 @@ __global__ void gemm_naive(float *A, float *B, float *C, int m, int k, int n) {
     }
 }
 
-// CPU에서 정답 계산 (검증용)
-void gemm_cpu(float *A, float *B, float *C, int m, int k, int n) {
-    for (int i = 0; i < m; i++)
-        for (int j = 0; j < n; j++) {
-            float sum = 0.0f;
-            for (int p = 0; p < k; p++)
-                sum += A[i * k + p] * B[p * n + j];
-            C[i * n + j] = sum;
-        }
-}
-
 int main() {
-    float *A, *B, *C;
+    std::vector<float> A(M * K), B(K * N), C(M * N);
     float *d_A, *d_B, *d_C;
 
-    // CPU 메모리 할당
-    A     = (float*)malloc(sizeof(float) * M * K);
-    B     = (float*)malloc(sizeof(float) * K * N);
-    C     = (float*)malloc(sizeof(float) * M * N);
-
-    // 초기화
-    for (int i = 0; i < M * K; i++) A[i] = 1.0f;
-    for (int i = 0; i < K * N; i++) B[i] = 1.0f;
+    // 랜덤 초기화
+    init_host_matrices(A.data(), B.data(), M, K, N);
 
     // GPU 메모리 할당
     cudaMalloc((void**)&d_A, sizeof(float) * M * K);
@@ -44,8 +27,8 @@ int main() {
     cudaMalloc((void**)&d_C, sizeof(float) * M * N);
 
     // CPU → GPU 복사
-    cudaMemcpy(d_A, A, sizeof(float) * M * K, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_B, B, sizeof(float) * K * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_A, A.data(), sizeof(float) * M * K, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, B.data(), sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
 
     // kernel 실행
@@ -70,8 +53,8 @@ int main() {
     cudaDeviceSynchronize();
     
     // GPU → CPU 복사
-    cudaMemcpy(C, d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
-    
+    cudaMemcpy(C.data(), d_C, sizeof(float) * M * N, cudaMemcpyDeviceToHost);
+
     float ms = 0;
     cudaEventElapsedTime(&ms, start, stop);
     ms /= N_ITERS;
@@ -81,10 +64,13 @@ int main() {
 
     printf("Time: %.3f ms\n", ms);
     printf("TFLOPS: %.2f\n", tflops);
-    //printf("C[0] = %f (expected: %f)\n", C[0], (float)K);
-    
+
+    // CPU 참조값과 비교
+    std::vector<float> C_ref(M * N);
+    gemm_cpu_cached(A.data(), B.data(), C_ref.data(), M, K, N);
+    verify_against_cpu(C.data(), C_ref.data(), (size_t)M * N);
+
     cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
-    free(A); free(B); free(C);
     return 0;
 }
 
