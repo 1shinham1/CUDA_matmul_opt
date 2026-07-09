@@ -50,8 +50,7 @@ __global__ void gemm_warptiling(float *A, float *B, float *C, int m, int k, int 
     for (int bkIdx = 0; bkIdx < k; bkIdx += BK) {
         // As 로드: float4로 읽고 전치 저장
         for (int offset = 0; offset + rowStrideA <= BM; offset += rowStrideA) {
-            float4 tmp = reinterpret_cast<float4*>(
-                &A[(innerRowA + offset) * k + innerColA * 4])[0];
+            float4 tmp = reinterpret_cast<float4*>(&A[(innerRowA + offset) * k + innerColA * 4])[0];
             As[(innerColA * 4 + 0) * BM + innerRowA + offset] = tmp.x;
             As[(innerColA * 4 + 1) * BM + innerRowA + offset] = tmp.y;
             As[(innerColA * 4 + 2) * BM + innerRowA + offset] = tmp.z;
@@ -59,10 +58,8 @@ __global__ void gemm_warptiling(float *A, float *B, float *C, int m, int k, int 
         }
         // Bs 로드: float4로 읽고 그대로 저장
         for (int offset = 0; offset + rowStrideB <= BK; offset += rowStrideB) {
-            reinterpret_cast<float4*>(
-                &Bs[(innerRowB + offset) * BN + innerColB * 4])[0]
-                = reinterpret_cast<float4*>(
-                &B[(innerRowB + offset) * n + innerColB * 4])[0];
+            reinterpret_cast<float4*>(&Bs[(innerRowB + offset) * BN + innerColB * 4])[0]
+                = reinterpret_cast<float4*>(&B[(innerRowB + offset) * n + innerColB * 4])[0];
         }
 
         __syncthreads();
@@ -73,19 +70,17 @@ __global__ void gemm_warptiling(float *A, float *B, float *C, int m, int k, int 
         // warptiling 계산
         for (int dotIdx = 0; dotIdx < BK; dotIdx++) {
             // regM 로드
-            for (int wSubRowIdx = 0; wSubRowIdx < WMITER; wSubRowIdx++) {
-                for (int i = 0; i < TM; i++) {
+            for (int wSubRowIdx = 0; wSubRowIdx < WMITER; wSubRowIdx++) { // WMITER(2)번 반복
+                for (int i = 0; i < TM; i++) { // TM번 반복
                     regM[wSubRowIdx * TM + i] =
-                        As[dotIdx * BM + warpRow * WM + wSubRowIdx * WSUBM
-                           + threadRowInWarp * TM + i];
+                        As[dotIdx * BM + warpRow * WM + wSubRowIdx * WSUBM + threadRowInWarp * TM + i];
                 }
             }
             // regN 로드
-            for (int wSubColIdx = 0; wSubColIdx < WNITER; wSubColIdx++) {
-                for (int j = 0; j < TN; j++) {
+            for (int wSubColIdx = 0; wSubColIdx < WNITER; wSubColIdx++) { // WNITER(2)번 반복
+                for (int j = 0; j < TN; j++) { // TN번 반복
                     regN[wSubColIdx * TN + j] =
-                        Bs[dotIdx * BN + warpCol * WN + wSubColIdx * WSUBN
-                           + threadColInWarp * TN + j];
+                        Bs[dotIdx * BN + warpCol * WN + wSubColIdx * WSUBN + threadColInWarp * TN + j];
                 }
             }
 
@@ -94,8 +89,7 @@ __global__ void gemm_warptiling(float *A, float *B, float *C, int m, int k, int 
                 for (int wSubColIdx = 0; wSubColIdx < WNITER; wSubColIdx++) {
                     for (int i = 0; i < TM; i++) {
                         for (int j = 0; j < TN; j++) {
-                            threadResults[(wSubRowIdx * TM + i) * (WNITER * TN)
-                                         + wSubColIdx * TN + j]
+                            threadResults[(wSubRowIdx * TM + i) * (WNITER * TN) + wSubColIdx * TN + j]
                                 += regM[wSubRowIdx * TM + i] * regN[wSubColIdx * TN + j];
                         }
                     }
@@ -113,8 +107,7 @@ __global__ void gemm_warptiling(float *A, float *B, float *C, int m, int k, int 
             for (int i = 0; i < TM; i++) {
                 for (int j = 0; j < TN; j += 4) {
                     reinterpret_cast<float4*>(
-                        &C_interim[(threadRowInWarp * TM + i) * n
-                                    + threadColInWarp * TN + j])[0]
+                        &C_interim[(threadRowInWarp * TM + i) * n + threadColInWarp * TN + j])[0]
                         = {threadResults[(wSubRowIdx * TM + i) * (WNITER * TN) + wSubColIdx * TN + j],
                            threadResults[(wSubRowIdx * TM + i) * (WNITER * TN) + wSubColIdx * TN + j + 1],
                            threadResults[(wSubRowIdx * TM + i) * (WNITER * TN) + wSubColIdx * TN + j + 2],

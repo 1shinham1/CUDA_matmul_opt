@@ -14,8 +14,8 @@ __global__ void gemm_microtiling(float *A, float *B, float *C, int m, int k, int
     int cRow = blockIdx.y;
     int cCol = blockIdx.x;
 
-    int threadRow = threadIdx.x / (BN / TC);
-    int threadCol = threadIdx.x % (BN / TC);
+    int threadRow = threadIdx.x / (BN / TC); //threadIdx.x / 8
+    int threadCol = threadIdx.x % (BN / TC); //threadIdx.x % 8
 
     __shared__ float As[BM * BK];
     __shared__ float Bs[BK * BN];

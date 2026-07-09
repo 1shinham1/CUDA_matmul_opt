@@ -64,7 +64,7 @@ int main() {
     cudaMemcpy(d_B, B.data(), sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
     // kernel 실행
-    dim3 blockDim(BLOCKSIZE * BLOCKSIZE); //1024
+    dim3 blockDim(BLOCKSIZE * BLOCKSIZE); //
     dim3 gridDim((N + BLOCKSIZE - 1) / BLOCKSIZE, (M + BLOCKSIZE - 1) / BLOCKSIZE);
 
     cudaEvent_t start, stop;

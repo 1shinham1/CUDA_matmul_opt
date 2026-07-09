@@ -1,19 +1,21 @@
 #include "gemm_tc.h"
 
+// BLOCK_TILE 128x128, warp 4개(2x2), warp당 TILES_PER_WARP 4x4(220 regs/thread).
+// WARPS_PER_BLOCK_M 4(256x128)과 SMEM_K_TILE 16 확장 둘 다 실측상 이득이 없거나
+// (256x128: 74.4%->74.0%, 오차범위) 손해였어서(K-tile16: bank conflict 오히려
+// 1.5배 증가, 74%->64.5%) 이 128x128 구성으로 되돌림 — 지금까지 중 최고 실효율.
 #define WARPS_PER_BLOCK_M 2
 #define WARPS_PER_BLOCK_N 2
-#define TILES_PER_WARP_M  2
-#define TILES_PER_WARP_N  2
+#define TILES_PER_WARP_M  4
+#define TILES_PER_WARP_N  4
 #define WARPS_PER_BLOCK   (WARPS_PER_BLOCK_M * WARPS_PER_BLOCK_N)  // 4
-#define WARP_TILE_M       (TILES_PER_WARP_M * WMMA_M)              // 32
-#define WARP_TILE_N       (TILES_PER_WARP_N * WMMA_N)              // 32
-#define BLOCK_TILE_M      (WARPS_PER_BLOCK_M * WARP_TILE_M)        // 64
-#define BLOCK_TILE_N      (WARPS_PER_BLOCK_N * WARP_TILE_N)        // 64
+#define WARP_TILE_M       (TILES_PER_WARP_M * WMMA_M)              // 64
+#define WARP_TILE_N       (TILES_PER_WARP_N * WMMA_N)              // 64
+#define BLOCK_TILE_M      (WARPS_PER_BLOCK_M * WARP_TILE_M)        // 128
+#define BLOCK_TILE_N      (WARPS_PER_BLOCK_N * WARP_TILE_N)        // 128
 #define THREADS_PER_WARP  32
 
 // float4(16byte) + __pipeline_memcpy_async
-// As (64×8): 행 하나 8 float = float4 2개 → 트랜잭션 수 1/4로 감소 + DMA 오버랩
-// Bs (8×64): 행 하나 64 float = float4 16개 → 동일
 __device__ __forceinline__ void load_tile_async_vec(
     float As[][WMMA_K], float Bs[][BLOCK_TILE_N],
     float *d_A_ptr, float *d_B_ptr,
@@ -21,10 +23,10 @@ __device__ __forceinline__ void load_tile_async_vec(
     int flatTid, int threadsPerBlock)
 {
     // As: float4 단위 asynchronous 로드
-    const int As_vecs = (BLOCK_TILE_M * WMMA_K) / 4;  // 128
+    const int As_vecs = (BLOCK_TILE_M * WMMA_K) / 4;
     for (int idx = flatTid; idx < As_vecs; idx += threadsPerBlock) {
-        int innerRow = idx / (WMMA_K / 4);   // 0~63
-        int innerCol = idx % (WMMA_K / 4);   // 0~1
+        int innerRow = idx / (WMMA_K / 4);
+        int innerCol = idx % (WMMA_K / 4);
         __pipeline_memcpy_async(
             &As[innerRow][innerCol * 4],
             &d_A_ptr[(blockRow + innerRow) * K + k0 + innerCol * 4],
@@ -32,10 +34,10 @@ __device__ __forceinline__ void load_tile_async_vec(
     }
 
     // Bs: float4 단위 asynchronous 로드
-    const int Bs_vecs = (WMMA_K * BLOCK_TILE_N) / 4;  // 128
+    const int Bs_vecs = (WMMA_K * BLOCK_TILE_N) / 4;
     for (int idx = flatTid; idx < Bs_vecs; idx += threadsPerBlock) {
-        int innerRow = idx / (BLOCK_TILE_N / 4);   // 0~7
-        int innerCol = idx % (BLOCK_TILE_N / 4);   // 0~15
+        int innerRow = idx / (BLOCK_TILE_N / 4);
+        int innerCol = idx % (BLOCK_TILE_N / 4);
         __pipeline_memcpy_async(
             &Bs[innerRow][innerCol * 4],
             &d_B_ptr[(k0 + innerRow) * N + blockCol + innerCol * 4],
@@ -43,8 +45,8 @@ __device__ __forceinline__ void load_tile_async_vec(
     }
 }
 
-__global__ void tc_vectorized_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr,
-                                     int M, int N, int K)
+__global__ void tc_param_tune_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_ptr,
+                                  int M, int N, int K)
 {
     int warpId  = threadIdx.y;
     int warpRow = warpId / WARPS_PER_BLOCK_N;
@@ -92,7 +94,8 @@ __global__ void tc_vectorized_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_
             __pipeline_commit();
         }
 
-        // 현재 버퍼로 compute
+        // 현재 버퍼로 compute: warp 하나가 TILES_PER_WARP_M x TILES_PER_WARP_N개
+        // fragment를 담당 -> a_frag/b_frag 재사용(outer product) 폭이 4x4로 늘어남
         for (int i = 0; i < TILES_PER_WARP_M; ++i) {
             float *a_tile_ptr = &As[curBuf][warpRowOffset + i * WMMA_M][0];
             nvcuda::wmma::load_matrix_sync(a_frag[i], a_tile_ptr, WMMA_K);
@@ -120,11 +123,11 @@ __global__ void tc_vectorized_kernel(float *d_A_ptr, float *d_B_ptr, float *d_C_
         }
 }
 
-void tc_vectorized(float *d_A, float *d_B, float *d_C, int M, int N, int K)
+void tc_param_tune(float *d_A, float *d_B, float *d_C, int M, int N, int K)
 {
     dim3 dim_block(THREADS_PER_WARP, WARPS_PER_BLOCK);
     dim3 dim_grid(M / BLOCK_TILE_M, N / BLOCK_TILE_N);
-    tc_vectorized_kernel<<<dim_grid, dim_block>>>(d_A, d_B, d_C, M, N, K);
+    tc_param_tune_kernel<<<dim_grid, dim_block>>>(d_A, d_B, d_C, M, N, K);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -137,7 +140,7 @@ int main(int argc, char **argv) {
     int K_pad = round_up_multiple(K, WMMA_K);
     int N_pad = round_up_multiple(N, BLOCK_TILE_N);
 
-    printf("[TF32 Vectorized + Double Buffer] WARPS=%dx%d, TILES_PER_WARP=%dx%d, BLOCK_TILE=%dx%d\n",
+    printf("[TF32 Param Tune (Big Tile) + Double Buffer] WARPS=%dx%d, TILES_PER_WARP=%dx%d, BLOCK_TILE=%dx%d\n",
            WARPS_PER_BLOCK_M, WARPS_PER_BLOCK_N, TILES_PER_WARP_M, TILES_PER_WARP_N,
            BLOCK_TILE_M, BLOCK_TILE_N);
     printf("Matrix size (padded): M=%d, K=%d, N=%d\n", M_pad, K_pad, N_pad);
@@ -157,7 +160,7 @@ int main(int argc, char **argv) {
     CUDA_CHECK(cudaMemset(d_C_cublas, 0, sizeof(float) * M_pad * N_pad));
 
     for (int i = 0; i < WARM_UP; ++i)
-        tc_vectorized(d_A, d_B, d_C, M_pad, N_pad, K_pad);
+        tc_param_tune(d_A, d_B, d_C, M_pad, N_pad, K_pad);
     CUDA_CHECK(cudaDeviceSynchronize());
 
     cudaEvent_t start, stop;
@@ -166,7 +169,7 @@ int main(int argc, char **argv) {
 
     CUDA_CHECK(cudaEventRecord(start));
     for (int i = 0; i < N_ITERS; ++i)
-        tc_vectorized(d_A, d_B, d_C, M_pad, N_pad, K_pad);
+        tc_param_tune(d_A, d_B, d_C, M_pad, N_pad, K_pad);
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
 
@@ -175,7 +178,7 @@ int main(int argc, char **argv) {
     ms /= N_ITERS;
 
     double gflops = compute_gflops(M_pad, N_pad, K_pad, ms);
-    printf("[TC Vectorized + Double Buffer] time = %.4f ms  |  GFLOPS = %.2f\n", ms, gflops);
+    printf("[Param Tune WMMA TF32] time = %.4f ms  |  GFLOPS = %.2f\n", ms, gflops);
 
     run_cublas_and_verify(d_A, d_B, d_C, d_C_cublas, M_pad, K_pad, N_pad, gflops, N_ITERS);
 

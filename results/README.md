@@ -34,5 +34,6 @@ results/
     ├── 11_tc_shared_mem.ncu-rep
     ├── 12_tc_warptiling.ncu-rep
     ├── 13_tc_doublebuffer.ncu-rep
-    └── 14_tc_vectorization.ncu-rep
+    ├── 14_tc_vectorization.ncu-rep
+    └── 15_tc_param_tune.ncu-rep
 ```

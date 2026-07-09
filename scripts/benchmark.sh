@@ -20,6 +20,7 @@ TC_KERNELS=(
     "12|TC Warp Tiling   |bin/12_gemm_tc_warptiling"
     "13|TC Double Buffer |bin/13_gemm_tc_doublebuffer"
     "14|TC Vectorization |bin/14_gemm_tc_vectorization"
+    "15|TC Param Tune    |bin/15_gemm_tc_param_tune"
 )
 
 RESULTS_DIR="results"

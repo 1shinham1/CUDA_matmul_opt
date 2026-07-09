@@ -68,6 +68,7 @@ make clean
 | 12 | `12_gemm_tc_warptiling.cu` | Fragment Tiling | warp 1개가 2×2 fragment 처리, arithmetic intensity 향상 |
 | 13 | `13_gemm_tc_doublebuffer.cu` | Double Buffering | 버퍼 2개로 로드와 연산 오버랩 |
 | 14 | `14_gemm_tc_vectorization.cu` | Vectorization | 128-bit 로드/스토어 |
+| 15 | `15_gemm_tc_param_tune.cu` | Param Tune (Big Tile) | BLOCK_TILE 128×128, TILES_PER_WARP 4×4로 warp당 fragment 재사용 확대 → occupancy(SMEM) 대신 레지스터로 latency 은닉 |
 
 각 Tensor Core 파일은 실행 시 cuBLAS TF32와 정확도(relative error)도 함께 출력합니다.
 
@@ -131,6 +132,7 @@ gemm-optimization/
 │   ├── 12_gemm_tc_warptiling.cu
 │   ├── 13_gemm_tc_doublebuffer.cu
 │   ├── 14_gemm_tc_vectorization.cu
+│   ├── 15_gemm_tc_param_tune.cu
 │   └── utils_device_info.cu
 ├── include/
 │   ├── gemm.h       ← CUDA Core 공통 (M/K/N 상수)
