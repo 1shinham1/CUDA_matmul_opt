@@ -16,7 +16,7 @@ __global__ void gemm_naive(float *A, float *B, float *C, int m, int k, int n) {
 
 int main() {
     std::vector<float> A(M * K), B(K * N), C(M * N);
-    float *d_A, *d_B, *d_C;
+    float *d_A, *d_B, *d_C, *d_C_cublas;
 
     // 랜덤 초기화
     init_host_matrices(A.data(), B.data(), M, K, N);
@@ -25,6 +25,7 @@ int main() {
     cudaMalloc((void**)&d_A, sizeof(float) * M * K);
     cudaMalloc((void**)&d_B, sizeof(float) * K * N);
     cudaMalloc((void**)&d_C, sizeof(float) * M * N);
+    cudaMalloc((void**)&d_C_cublas, sizeof(float) * M * N);
 
     // CPU → GPU 복사
     cudaMemcpy(d_A, A.data(), sizeof(float) * M * K, cudaMemcpyHostToDevice);
@@ -65,12 +66,14 @@ int main() {
     printf("Time: %.3f ms\n", ms);
     printf("TFLOPS: %.2f\n", tflops);
 
+    run_cublas_fp32_and_verify(d_A, d_B, d_C_cublas, M, K, N, tflops * 1000.0);
+
     // CPU 참조값과 비교
     std::vector<float> C_ref(M * N);
     gemm_cpu_cached(A.data(), B.data(), C_ref.data(), M, K, N);
     verify_against_cpu(C.data(), C_ref.data(), (size_t)M * N);
 
-    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C); cudaFree(d_C_cublas);
     return 0;
 }
 

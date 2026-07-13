@@ -70,13 +70,14 @@ __global__ void gemm_microtiling(float *A, float *B, float *C, int m, int k, int
 
 int main() {
     std::vector<float> A(M * K), B(K * N), C(M * N);
-    float *d_A, *d_B, *d_C;
+    float *d_A, *d_B, *d_C, *d_C_cublas;
 
     init_host_matrices(A.data(), B.data(), M, K, N);
 
     cudaMalloc((void**)&d_A, sizeof(float) * M * K);
     cudaMalloc((void**)&d_B, sizeof(float) * K * N);
     cudaMalloc((void**)&d_C, sizeof(float) * M * N);
+    cudaMalloc((void**)&d_C_cublas, sizeof(float) * M * N);
 
     cudaMemcpy(d_A, A.data(), sizeof(float) * M * K, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, B.data(), sizeof(float) * K * N, cudaMemcpyHostToDevice);
@@ -114,10 +115,12 @@ int main() {
     printf("Time: %.3f ms\n", ms);
     printf("TFLOPS: %.2f\n", tflops);
 
+    run_cublas_fp32_and_verify(d_A, d_B, d_C_cublas, M, K, N, tflops * 1000.0);
+
     std::vector<float> C_ref(M * N);
     gemm_cpu_cached(A.data(), B.data(), C_ref.data(), M, K, N);
     verify_against_cpu(C.data(), C_ref.data(), (size_t)M * N);
 
-    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C); cudaFree(d_C_cublas);
     return 0;
 }

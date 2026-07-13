@@ -69,6 +69,7 @@ make clean
 | 13 | `13_gemm_tc_doublebuffer.cu` | Double Buffering | 버퍼 2개로 로드와 연산 오버랩 |
 | 14 | `14_gemm_tc_vectorization.cu` | Vectorization | 128-bit 로드/스토어 |
 | 15 | `15_gemm_tc_param_tune.cu` | Param Tune (Big Tile) | BLOCK_TILE 128×128, TILES_PER_WARP 4×4로 warp당 fragment 재사용 확대 → occupancy(SMEM) 대신 레지스터로 latency 은닉 |
+| 16 | `16_gemm_tc_swizzle.cu` | Shared Memory Swizzle | fragment를 `wmma::load_matrix_sync` 대신 수동으로 `x[]`에 채워 넣고 XOR/순환이동 swizzle 적용 → shared bank conflict 0, cuBLAS 대비 최고 기록 |
 
 각 Tensor Core 파일은 실행 시 cuBLAS TF32와 정확도(relative error)도 함께 출력합니다.
 
@@ -133,6 +134,7 @@ gemm-optimization/
 │   ├── 13_gemm_tc_doublebuffer.cu
 │   ├── 14_gemm_tc_vectorization.cu
 │   ├── 15_gemm_tc_param_tune.cu
+│   ├── 16_gemm_tc_swizzle.cu
 │   └── utils_device_info.cu
 ├── include/
 │   ├── gemm.h       ← CUDA Core 공통 (M/K/N 상수)

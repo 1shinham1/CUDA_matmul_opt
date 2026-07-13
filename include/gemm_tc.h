@@ -83,11 +83,13 @@ inline void run_cublas_and_verify(
     const float alpha = 1.0f, beta = 0.0f;
 
     // warmup
-    CUBLAS_CHECK(cublasGemmEx(
-        handle, CUBLAS_OP_N, CUBLAS_OP_N, N_pad, M_pad, K_pad,
-        &alpha, d_B, CUDA_R_32F, N_pad, d_A, CUDA_R_32F, K_pad,
-        &beta,  d_C_cublas, CUDA_R_32F, N_pad,
-        CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    for (int i = 0; i < WARM_UP; ++i) {
+        CUBLAS_CHECK(cublasGemmEx(
+            handle, CUBLAS_OP_N, CUBLAS_OP_N, N_pad, M_pad, K_pad,
+            &alpha, d_B, CUDA_R_32F, N_pad, d_A, CUDA_R_32F, K_pad,
+            &beta,  d_C_cublas, CUDA_R_32F, N_pad,
+            CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    }
     CUDA_CHECK(cudaDeviceSynchronize());
 
     cudaEvent_t start, stop;

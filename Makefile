@@ -22,6 +22,7 @@ TARGETS := \
     bin/13_gemm_tc_doublebuffer \
 	bin/14_gemm_tc_vectorization \
 	bin/15_gemm_tc_param_tune		\
+	bin/16_gemm_tc_swizzle		\
     bin/utils_device_info
 
 .PHONY: all clean run profile info
@@ -32,28 +33,28 @@ bin/:
 	mkdir -p bin
 
 bin/01_gemm_naive:         src/01_gemm_naive.cu
-	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/02_gemm_coalesced:     src/02_gemm_coalesced.cu
-	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/03_gemm_shared_memory: src/03_gemm_shared_memory.cu
-	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/04_gemm_microtiling:   src/04_gemm_microtiling.cu
-	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/05_gemm_vectorization: src/05_gemm_vectorization.cu
-	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/06_gemm_param_tune:    src/06_gemm_param_tune.cu
-	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/07_gemm_warptiling:    src/07_gemm_warptiling.cu
-	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/08_gemm_doublebuffer:  src/08_gemm_doublebuffer.cu
-	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -o $@
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/09_gemm_cublas:        src/09_gemm_cublas.cu
 	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
@@ -87,7 +88,8 @@ PROFILES := \
     $(PROFILE_DIR)/12_tc_warptiling.ncu-rep   \
     $(PROFILE_DIR)/13_tc_doublebuffer.ncu-rep \
     $(PROFILE_DIR)/14_tc_vectorization.ncu-rep \
-    $(PROFILE_DIR)/15_tc_param_tune.ncu-rep
+    $(PROFILE_DIR)/15_tc_param_tune.ncu-rep   \
+    $(PROFILE_DIR)/16_tc_swizzle.ncu-rep
 
 profile: $(PROFILES)
 
@@ -138,6 +140,9 @@ $(PROFILE_DIR)/14_tc_vectorization.ncu-rep: bin/14_gemm_tc_vectorization | $(PRO
 
 $(PROFILE_DIR)/15_tc_param_tune.ncu-rep: bin/15_gemm_tc_param_tune | $(PROFILE_DIR)
 	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/15_tc_param_tune ./bin/15_gemm_tc_param_tune
+
+$(PROFILE_DIR)/16_tc_swizzle.ncu-rep: bin/16_gemm_tc_swizzle | $(PROFILE_DIR)
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/16_tc_swizzle ./bin/16_gemm_tc_swizzle
 # ─── 정리 ────────────────────────────────────────────────────
 clean:
 	rm -rf bin/
@@ -161,4 +166,7 @@ bin/14_gemm_tc_vectorization: src/14_gemm_tc_vectorization.cu
 	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/15_gemm_tc_param_tune: src/15_gemm_tc_param_tune.cu
+	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
+
+bin/16_gemm_tc_swizzle: src/16_gemm_tc_swizzle.cu
 	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@

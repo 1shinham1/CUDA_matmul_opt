@@ -75,3 +75,47 @@ inline void verify_against_cpu(const float *C, const float *C_ref, size_t size) 
     printf("Relative error vs CPU: %.6e %s\n", rel_err,
            (rel_err < 1e-3) ? "(OK)" : "(WARNING: 오차가 큼)");
 }
+
+// ─── cuBLAS FP32 기준값 측정 (같은 프로세스 안에서 커널 직후 측정) ────
+// benchmark.sh가 커널마다 별도 프로세스(예: 09번)의 cuBLAS 측정값을 공유해
+// 쓰면 GPU 클럭/부스트 편차가 %에 섞인다. 커널 자신의 프로세스 안에서
+// 바로 옆에서 cuBLAS를 재서 비교해야 공정하다(TC 커널의 run_cublas_and_verify
+// 와 동일한 목적).
+inline void run_cublas_fp32_and_verify(float *d_A, float *d_B, float *d_C_cublas,
+                                        int m, int k, int n, double gflops_kernel) {
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+
+    const float alpha = 1.0f, beta = 0.0f;
+
+    // 워밍업
+    for (int i = 0; i < WARM_UP; ++i) {
+        cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, m, k,
+                    &alpha, d_B, n, d_A, k, &beta, d_C_cublas, n);
+    }
+    cudaDeviceSynchronize();
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+    for (int i = 0; i < N_ITERS; ++i) {
+        cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, m, k,
+                    &alpha, d_B, n, d_A, k, &beta, d_C_cublas, n);
+    }
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, start, stop);
+    ms /= N_ITERS;
+
+    double gflops_cublas = 2.0 * (double)m * (double)n * (double)k / (ms / 1000.0) / 1e9;
+    printf("[cuBLAS FP32]  time = %.4f ms  |  GFLOPS = %.2f\n", ms, gflops_cublas);
+    printf("Efficiency vs cuBLAS: %.1f%%\n", 100.0 * gflops_kernel / gflops_cublas);
+
+    cublasDestroy(handle);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+}

@@ -21,6 +21,7 @@ TC_KERNELS=(
     "13|TC Double Buffer |bin/13_gemm_tc_doublebuffer"
     "14|TC Vectorization |bin/14_gemm_tc_vectorization"
     "15|TC Param Tune    |bin/15_gemm_tc_param_tune"
+    "16|TC Swizzle       |bin/16_gemm_tc_swizzle"
 )
 
 RESULTS_DIR="results"
@@ -35,14 +36,13 @@ echo "  CUDA GEMM Benchmark  (4096×4096×4096, FP32, sm_89)"
 echo "  $(date)"
 echo "=========================================================="
 
-# ─── cuBLAS FP32 기준값 ───────────────────────────────────────
-CUBLAS_OUT=$(./bin/09_gemm_cublas)
-CUBLAS_MS=$(echo "$CUBLAS_OUT"     | grep "Average kernel" | awk '{print $5}')
-CUBLAS_TFLOPS=$(echo "$CUBLAS_OUT" | grep "GFLOPS:"        | awk '{printf "%.2f", $2/1000}')
-
+# ─── CUDA Core (FP32) ────────────────────────────────────────
+# 01~08도 TC 커널과 동일하게 자기 프로세스 안에서 커널 직후 cuBLAS FP32를
+# 바로 이어서 측정해 출력한다(run_cublas_fp32_and_verify). 09번(cuBLAS 자체
+# 실행)의 측정값을 01~08에 공유하면 프로세스 간 GPU 클럭/부스트 편차가 %에
+# 섞이므로, 커널마다 "자체 측정값"으로 %를 계산한다.
 echo ""
 echo "── CUDA Core (FP32) ──────────────────────────────────────"
-echo "[*] cuBLAS FP32 baseline: ${CUBLAS_MS} ms  |  ${CUBLAS_TFLOPS} TFLOPS"
 echo "----------------------------------------------------------"
 
 for entry in "${CUDA_KERNELS[@]}"; do
@@ -53,27 +53,29 @@ for entry in "${CUDA_KERNELS[@]}"; do
     OUTPUT=$(${CMD})
     MS=$(echo "$OUTPUT"     | grep "^Time:"   | awk '{print $2}')
     TFLOPS=$(echo "$OUTPUT" | grep "^TFLOPS:" | awk '{print $2}')
-    PCT=$(awk "BEGIN{printf \"%.1f\", ${CUBLAS_MS}/${MS}*100}")
 
-    printf "[%s] %-20s  %6s ms  %5s TFLOPS  (cuBLAS 대비 %s%%)\n" \
-        "$NUM" "$NAME" "$MS" "$TFLOPS" "$PCT"
+    CUBLAS_OWN_MS=$(echo "$OUTPUT" | grep "\[cuBLAS FP32\]" | grep -oP 'time = \K[0-9.]+')
+    PCT=$(awk "BEGIN{printf \"%.1f\", ${CUBLAS_OWN_MS}/${MS}*100}")
+
+    printf "[%s] %-20s  %6s ms  %5s TFLOPS  (cuBLAS FP32 %sms 대비 %s%%)\n" \
+        "$NUM" "$NAME" "$MS" "$TFLOPS" "$CUBLAS_OWN_MS" "$PCT"
     echo "${NUM}_${NAME// /},${MS},${TFLOPS},${PCT}" >> "${CSV}"
 done
 
+CUBLAS_OUT=$(./bin/09_gemm_cublas)
+CUBLAS_MS=$(echo "$CUBLAS_OUT"     | grep "Average kernel" | awk '{print $5}')
+CUBLAS_TFLOPS=$(echo "$CUBLAS_OUT" | grep "GFLOPS:"        | awk '{printf "%.2f", $2/1000}')
 printf "[09] %-20s  %6s ms  %5s TFLOPS  (cuBLAS 대비 100.0%%)\n" \
     "cuBLAS FP32" "$CUBLAS_MS" "$CUBLAS_TFLOPS"
 echo "09_cuBLAS,${CUBLAS_MS},${CUBLAS_TFLOPS},100.0" >> "${CSV}"
 
-# ─── cuBLAS TF32 기준값 ───────────────────────────────────────
-# TC 파일들은 내부에서 cuBLAS TF32를 직접 측정하므로 별도 기준값 추출
-TC_REF_OUT=$(./bin/10_gemm_tc_naive 2>/dev/null)
-CUBLAS_TC_MS=$(echo "$TC_REF_OUT"     | grep "\[cuBLAS TF32\]" | grep -oP 'time = \K[0-9.]+')
-CUBLAS_TC_GFLOPS=$(echo "$TC_REF_OUT" | grep "\[cuBLAS TF32\]" | grep -oP 'GFLOPS = \K[0-9.]+')
-CUBLAS_TC_TFLOPS=$(awk "BEGIN{printf \"%.2f\", ${CUBLAS_TC_GFLOPS}/1000}")
-
+# ─── Tensor Core (TF32) ─────────────────────────────────────
+# TC 파일들은 자기 프로세스 안에서 자기 커널 직후 cuBLAS TF32를 바로 이어서
+# 측정해 출력한다(run_cublas_and_verify). 커널마다 그 "자체 측정값"으로 %를
+# 계산해야 프로세스 간 GPU 클럭/부스트 편차가 안 섞인다. (10번 커널 한 번
+# 측정값을 11~15번에 공유해서 재사용하면 그 편차만큼 %가 왜곡됐었음)
 echo ""
 echo "── Tensor Core (TF32) ────────────────────────────────────"
-echo "[*] cuBLAS TF32 baseline: ${CUBLAS_TC_MS} ms  |  ${CUBLAS_TC_TFLOPS} TFLOPS"
 echo "----------------------------------------------------------"
 
 for entry in "${TC_KERNELS[@]}"; do
@@ -85,16 +87,14 @@ for entry in "${TC_KERNELS[@]}"; do
     MS=$(echo "$OUTPUT"     | grep "time = "   | head -1 | grep -oP 'time = \K[0-9.]+')
     GFLOPS=$(echo "$OUTPUT" | grep "GFLOPS = " | head -1 | grep -oP 'GFLOPS = \K[0-9.]+')
     TFLOPS=$(awk "BEGIN{printf \"%.2f\", ${GFLOPS}/1000}")
-    PCT=$(awk "BEGIN{printf \"%.1f\", ${CUBLAS_TC_MS}/${MS}*100}")
 
-    printf "[%s] %-20s  %6s ms  %5s TFLOPS  (cuBLAS TF32 대비 %s%%)\n" \
-        "$NUM" "$NAME" "$MS" "$TFLOPS" "$PCT"
+    CUBLAS_OWN_MS=$(echo "$OUTPUT" | grep "\[cuBLAS TF32\]" | grep -oP 'time = \K[0-9.]+')
+    PCT=$(awk "BEGIN{printf \"%.1f\", ${CUBLAS_OWN_MS}/${MS}*100}")
+
+    printf "[%s] %-20s  %6s ms  %5s TFLOPS  (cuBLAS TF32 %sms 대비 %s%%)\n" \
+        "$NUM" "$NAME" "$MS" "$TFLOPS" "$CUBLAS_OWN_MS" "$PCT"
     echo "${NUM}_${NAME// /},${MS},${TFLOPS},${PCT}" >> "${CSV}"
 done
-
-printf "[TC] %-20s  %6s ms  %5s TFLOPS  (cuBLAS TF32 대비 100.0%%)\n" \
-    "cuBLAS TF32" "$CUBLAS_TC_MS" "$CUBLAS_TC_TFLOPS"
-echo "TC_cuBLAS_TF32,${CUBLAS_TC_MS},${CUBLAS_TC_TFLOPS},100.0" >> "${CSV}"
 
 echo "=========================================================="
 echo ""
