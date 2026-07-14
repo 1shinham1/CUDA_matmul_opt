@@ -114,7 +114,7 @@ ncu-ui results/profiles/01_naive.ncu-rep
 ## 프로젝트 구조
 
 ```
-gemm-optimization/
+CUDA_matmul_opt/
 ├── README.md
 ├── Makefile
 ├── run.sh
