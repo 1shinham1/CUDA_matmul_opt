@@ -26,6 +26,10 @@ twice, both benchmarked against standard/naive attention on an RTX 4090:
 - **[FA_official/](FA_official/)** — the paper's own reference implementation
   (cloned for comparison), used to check how the real CUDA kernels use
   tensor cores (CUTLASS warp-level MMA / raw PTX `mma.sync`).
+- **[compare/](compare/)** — head-to-head benchmarks of `FA_with_cuda`'s WMMA
+  kernel directly against `FA_official` (as opposed to Triton) at matching
+  configs: **~2.5–13× slower** than the real FA1 kernel, worst around
+  seq_len 2048–4096.
 
 Each subdirectory with its own results has a README with the full
 results/tables and a "how to run" section.

@@ -1,5 +1,16 @@
 # FA_with_cuda WMMA forward kernel: warp-tiling + double-buffering
 
+**Outcome**: implemented largely as planned (warp-tiling to BLOCK_N=64,
+STAGES=2 double-buffered K/V), with one deviation from §5 below —
+`cuda::pipeline`/`memcpy_async` was tried but dropped in favor of plain
+`__syncthreads()`-based double buffering, because it kept tripping
+`racecheck`/`synccheck` hazards when combined with this kernel's
+lane-divergent softmax section (cp.async fallback vs. WMMA read conflicts,
+mbarrier arrival-count mismatches). See the top-of-file comment in
+`flash_kernels_tc.cuh` for the full reasoning; the shared-memory layout,
+warp-tiling, and verification steps below are otherwise unchanged from what
+shipped.
+
 ## Context
 
 `flash_fwd_kernel_tc` (the tensor-core/WMMA FlashAttention forward kernel in

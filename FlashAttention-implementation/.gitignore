@@ -19,7 +19,6 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
-*csv
 
 # Editor config (machine-specific, e.g. hardcoded compiler path)
 .vscode/
