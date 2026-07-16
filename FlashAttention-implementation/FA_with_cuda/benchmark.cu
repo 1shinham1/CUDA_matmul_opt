@@ -2,9 +2,8 @@
 //
 // 시퀀스 길이(seq_len)를 늘려가면서 "forward만" / "forward+backward"
 // 두 가지 경우로 실행 시간(ms)과 GPU 메모리 사용량(MB)을 측정한다.
-// FA_with_python/benchmark.py와 같은 방식/같은 설정(batch*heads=32,
-// head_dim=64)으로 측정해서, Triton 버전과 순수 CUDA 버전을 나란히
-// 비교할 수 있게 만든 것이 목적.
+// batch*heads=32, head_dim=64 설정으로 측정 (compare/ 디렉토리에서
+// FA_official과 head-to-head 비교할 때 쓰는 것과 같은 설정).
 //
 // 중요한 설계 포인트: S, P, dP, dS 같은 스크래치(임시) 버퍼들은
 // 시간을 측정하는 구간 "밖에서" 미리 한 번만 할당한다. 만약 매
@@ -74,7 +73,7 @@ int main(int argc, char** argv) {
     // 예: ./benchmark        -> non-causal
     //     ./benchmark causal -> causal (GPT처럼 미래 토큰을 못 보게 마스킹)
     bool causal = argc > 1 && std::string(argv[1]) == "causal";
-    int BH = 32;  // batch=4, heads=8 -> batch*heads=32. FA_with_python 설정과 동일.
+    int BH = 32;  // batch=4, heads=8 -> batch*heads=32 (compare/의 FA_official 비교와 동일 설정).
     printf("FA_with_cuda benchmark (BH=%d, head_dim=%d, causal=%d, Q/K/V/O/dQ/dK/dV/dO=fp16, compute=fp32)\n\n", BH, HEAD_DIM, causal);
 
     // 128부터 32768까지 2배씩 늘려가며 측정. naive는 메모리 부족(OOM)으로
@@ -205,8 +204,7 @@ int main(int argc, char** argv) {
 
     // ==================== 결과 출력 ====================
     // 콘솔에 표로 한 번 찍고, 같은 내용을 CSV로도 저장한다 (causal이면
-    // results_causal.csv, 아니면 results_noncausal.csv -- FA_with_python의
-    // results/*.csv와 이름 규칙을 맞춰서 나중에 비교하기 쉽게 함).
+    // results_causal.csv, 아니면 results_noncausal.csv).
     printf("\n%6s | %10s %10s | %10s %10s | %10s %10s | %10s %10s\n",
            "seq_len", "naive_fwd", "naive_mb", "flash_fwd", "flash_mb", "naive_fb", "naivefb_mb", "flash_fb", "flashfb_mb");
     std::string csv_path = causal ? "results_causal.csv" : "results_noncausal.csv";

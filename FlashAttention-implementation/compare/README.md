@@ -2,7 +2,7 @@
 
 Everything in [`FA_with_cuda/README.md`](../FA_with_cuda/README.md) compares
 `FA_with_cuda`'s own kernels against each other (naive vs. flash, FMA vs.
-WMMA) or against Triton. This directory is the one place that benchmarks
+WMMA). This directory is the one place that benchmarks
 `FA_with_cuda`'s WMMA forward kernel directly against
 [`FA_official/`](../FA_official/) — the paper's real, CUTLASS-based
 FlashAttention-1 kernel — at matching configs, forward pass, non-causal,
@@ -55,8 +55,7 @@ more mature occupancy/scheduling relatively more room to show its advantage).
 
 This is the same kernel documented in
 [`FA_with_cuda/README.md`](../FA_with_cuda/README.md#3-tensor-cores-benchmark_tc-the-big-lever)
-(there benchmarked at ~9–10× behind Triton) and analyzed for remaining
-bottlenecks in
+and analyzed for remaining bottlenecks in
 [`FA_with_cuda/OPTIMIZATION_PLAN.md`](../FA_with_cuda/OPTIMIZATION_PLAN.md) —
 the gap to `FA_official` here is the same class of missing optimizations
 (S/P round-trip through shared memory forced by the opaque `nvcuda::wmma`

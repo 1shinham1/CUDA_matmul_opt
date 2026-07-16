@@ -14,11 +14,14 @@ shipped.
 ## Context
 
 `flash_fwd_kernel_tc` (the tensor-core/WMMA FlashAttention forward kernel in
-`flash_kernels_tc.cuh`) currently runs at only **~9-13% of the Triton
+`flash_kernels_tc.cuh`) currently runs at only **~9-13% of a Triton
 reference's** forward-pass speed (measured via `benchmark_tc.cu`'s
-`results_tc_*.csv` vs. `FA_with_python/results/bench_{noncausal,causal}.csv`),
-even though both use the same tensor-core hardware. The user wants to close
-that gap, with a realistic first target somewhere on the way to ~80%.
+`results_tc_*.csv` against a since-lost Triton benchmark CSV — that
+comparison source no longer exists in this repo; see
+[`compare/`](../compare/) for the current, reproducible comparison target,
+against `FA_official` instead), even though both use the same tensor-core
+hardware. The user wants to close that gap, with a realistic first target
+somewhere on the way to ~80%.
 
 Root cause (established via code reading + a live `-Xptxas -v` build): the
 kernel processes only **one 16×16 WMMA tile of keys per outer-loop
@@ -170,16 +173,15 @@ new byte count).
    spills (baseline today: 123 regs/thread, 0 spills).
 6. `make benchmark_tc && ./benchmark_tc && ./benchmark_tc causal` —
    regenerate `results_tc_noncausal.csv` / `results_tc_causal.csv`.
-7. Compute new "% of Triton": for each matching `seq_len`, `100 *
-   triton_flash_ms / new_tc_fwd_ms` using `tc_fwd_ms` from the new
-   `results_tc_*.csv` against `flash_ms` from
-   `FA_with_python/results/bench_{noncausal,causal}.csv` (confirmed
-   forward-only). Compare against today's baseline (~9-13%) and the ~27-38%
-   planning estimate above.
+7. Compute the updated gap to production: `cd ../compare && python compare.py`
+   (see [`compare/README.md`](../compare/README.md)) recomputes the
+   head-to-head ratio against `FA_official` using the regenerated
+   `results_tc_*.csv` from step 6. Compare against `compare/README.md`'s
+   recorded tables.
 
 ### Critical files
 - `flash_kernels_tc.cuh` (all changes)
 - `test_flash_tc.cu`, `benchmark_tc.cu` (run unmodified, for verification)
-- `../FA_with_python/results/bench_noncausal.csv`,
-  `bench_causal.csv` (existing Triton reference numbers, for the %
-  comparison)
+- `../compare/compare.py`, `../compare/README.md` (current head-to-head
+  comparison against `FA_official` — the original Triton-comparison CSV
+  referenced earlier in this doc no longer exists in this repo)

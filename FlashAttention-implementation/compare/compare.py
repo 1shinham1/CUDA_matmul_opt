@@ -1,8 +1,8 @@
 """Compare your two FlashAttention implementations at the exact same config
 (batch=4, heads=8, head_dim=64, fp16, forward pass, non-causal):
   - FA_with_cuda   : hand-written WMMA tensor-core CUDA kernel
-  - FA_with_python2: official FlashAttention v1.0.9 (FA_official), via this
-                     folder's own flash_attn_unpadded_qkvpacked_func call
+  - FA_official    : official FlashAttention v1.0.9, via this folder's own
+                     flash_attn_unpadded_qkvpacked_func call
 
 Reuses the already-generated CSV for FA_with_cuda (no need to rebuild/rerun
 that), and runs a matching-config sweep here for the official kernel so the

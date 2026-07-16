@@ -1,19 +1,16 @@
 # FlashAttention — plain C/CUDA version
 
-A from-scratch reimplementation of [FA_with_python](../FA_with_python/) in
-**plain C++/CUDA, no PyTorch, no Triton** — hand-written `__global__` kernels
+Plain C++/CUDA, no PyTorch, no Triton — hand-written `__global__` kernels
 compiled with `nvcc`, tested against a self-contained double-precision CPU
-reference. Same order as the Python version: naive forward → naive backward
-→ FlashAttention forward → FlashAttention backward → benchmark comparison,
-then two follow-up experiments (a literal-Algorithm-1/2 kernel, and a
-tensor-core kernel).
+reference. Naive forward → naive backward → FlashAttention forward →
+FlashAttention backward → benchmark comparison, then two follow-up
+experiments (a literal-Algorithm-1/2 kernel, and a tensor-core kernel).
 
 **Precision**: `Q, K, V, O, dQ, dK, dV, dO` are stored as `__half` (fp16),
 matching the paper's actual training setup (Apex/PyTorch AMP). Everything
 else — softmax, the online-softmax running statistics, the `S/P/dP/dS`
 scratch buffers in the naive kernels — stays fp32, the same "store fp16,
-compute fp32" split PyTorch AMP and our Triton kernel (`tl.dot`'s fp32
-accumulator) both use.
+compute fp32" split PyTorch AMP uses.
 
 ## Files
 
@@ -21,7 +18,7 @@ accumulator) both use.
 |---|---|
 | `common.cuh` | Error-checking macros, a byte-tracking device allocator (`DeviceAllocTracker`), a CUDA-event timer, fp16↔fp32 conversion helpers (`to_half`/`to_float`/`snap_to_half`), and the double-precision CPU reference (`ref_forward`/`ref_backward`) used as ground truth for every test. |
 | `naive_kernels.cuh` | Standard attention (Algorithm 0 forward / Algorithm 3 backward) as **unfused** kernels: `naive_scores_kernel` (S=QKᵀ), `naive_softmax_kernel`, `naive_output_kernel` (O=PV), then `naive_dv/dp/ds/dq/dk_kernel` for the backward. Every intermediate (S, P, dP, dS) is its own fp32 `N×N` buffer in global memory — no shared memory, no tiling. |
-| `flash_kernels.cuh` | FlashAttention forward (`flash_fwd_kernel`) and backward (`flash_bwd_dkdv_kernel` + `flash_bwd_dq_kernel`) as fused, tiled kernels with explicit `__shared__` memory tiles and the online-softmax recurrence (plain scalar FMA loops, no tensor cores) — a direct translation of `flash_attention.py`'s Triton kernels. Also contains `flash_fwd_kernel_strict`, which normalizes every K/V tile instead of deferring to the end (see "Literal Algorithm 1/2" below). |
+| `flash_kernels.cuh` | FlashAttention forward (`flash_fwd_kernel`) and backward (`flash_bwd_dkdv_kernel` + `flash_bwd_dq_kernel`) as fused, tiled kernels with explicit `__shared__` memory tiles and the online-softmax recurrence (plain scalar FMA loops, no tensor cores). Also contains `flash_fwd_kernel_strict`, which normalizes every K/V tile instead of deferring to the end (see "Literal Algorithm 1/2" below). |
 | `flash_kernels_tc.cuh` | The tensor-core forward (`flash_fwd_kernel_tc`) and backward (`flash_bwd_dkdv_kernel_tc` + `flash_bwd_dq_kernel_tc`) kernels, using CUDA's `nvcuda::wmma` API — see "Tensor cores" below. |
 | `test_naive.cu`, `test_flash.cu`, `test_flash_tc.cu` | Correctness tests: GPU output vs. the fp64 CPU reference, across shapes/causal/non-causal/non-block-aligned N. |
 | `benchmark.cu` | Runtime + peak-memory sweep, forward-only and forward+backward, naive vs. flash (no tensor cores). |
@@ -65,13 +62,9 @@ BH=2 seq_len=  130 d= 64 causal=1 | fwd: TC vs CPU-ref 0.000938 | TC vs FMA-kern
 | 16384 | OOM | 452.57 | — | — | 514 | — |
 | 32768 | OOM | 1805.55 | — | — | 1028 | — |
 
-The memory story matches the Python/Triton results almost exactly — naive
-hits the same OOM wall, flash keeps scaling. Runtime speedup (~2.5×) is much
-smaller than Triton's (12–34×) because neither kernel here uses tensor
-cores: this isolates the pure IO-awareness effect from the hardware-utilization
-effect that's baked into the Python comparison (PyTorch's naive path still
-calls cuBLAS/tensor cores for its two matmuls even though it materializes
-the full `N×N` matrix).
+Runtime speedup here (~2.5×) reflects the pure IO-awareness effect in
+isolation, since neither kernel uses tensor cores yet — see the "Tensor
+cores" experiment below for what happens once they're added.
 
 fp16 vs. fp32 storage (holding the algorithm fixed) has almost no effect on
 *speed* here — 28.03ms (fp32) vs. 28.85ms (fp16) forward at N=4096 — but
@@ -141,11 +134,10 @@ Switching on tensor cores alone (same algorithm, same tiling, same fp16
 storage — only the matmuls change) is worth **~1.8–3.9×** on top of the
 FMA-loop flash kernels, forward and backward included. Combined with the
 algorithmic win over naive, the WMMA kernels are **4–11× faster than
-naive**, versus the FMA kernels' ~2.5×. This one change closes most of the
-remaining gap to Triton: at N=4096, fwd+bwd, Triton is 4.42ms vs. this
-kernel's 44.33ms (~10× apart, down from the FMA kernel's ~23× gap) — the
-rest of that residual gap is Triton's compiler doing additional things this
-hand-written WMMA code doesn't (software pipelining/double-buffering of
+naive**, versus the FMA kernels' ~2.5×. The remaining gap to a real
+production kernel (see [`compare/`](../compare/) for head-to-head numbers
+against `FA_official`) comes from what a real compiler/library does that
+this hand-written WMMA code doesn't (software pipelining/double-buffering of
 shared-memory loads against compute, better occupancy tuning, possibly warp
 specialization, and — specifically for backward — the causal-skip
 optimization noted above that the WMMA kernels here are missing).
@@ -160,7 +152,8 @@ this project wasn't worth the risk/complexity, so `flash_fwd_kernel_tc` uses
 **`nvcuda::wmma`** instead (`<mma.h>`, ships with the CUDA toolkit, no extra
 dependency) — a documented, higher-level C++ API for the *same* underlying
 tensor-core hardware instructions, at some cost in peak performance versus
-hand-tuned raw-PTX/CUTLASS code (see the residual Triton gap above).
+hand-tuned raw-PTX/CUTLASS code (see [`compare/`](../compare/) for the
+measured gap against `FA_official`).
 
 **Why the kernel had to be restructured.** `flash_fwd_kernel` (FMA version)
 uses "1 CUDA thread = 1 query row." WMMA can't work that way: a `wmma`
@@ -215,8 +208,8 @@ re-earned in the new kernel structure."
   kernels for S, softmax, O (forward) and dV/dP/dS/dQ/dK (backward), each
   reading/writing its own `N×N` (or `N×d`) buffer in global memory. This is
   the baseline the paper argues against, not an attempt at a fast reference.
-- **Flash backward** is split into two kernels for the same reason as the
-  Triton version: `flash_bwd_dkdv_kernel` (one thread per K/V row, loops over
+- **Flash backward** is split into two kernels:
+  `flash_bwd_dkdv_kernel` (one thread per K/V row, loops over
   Q tiles) and `flash_bwd_dq_kernel` (one thread per Q row, loops over K/V
   tiles, mirrors forward) — each output tensor is written by exactly one
   thread, so no atomics anywhere. Recomputes `S_ij`/`P_ij` from `Q,K,V` and
@@ -236,19 +229,20 @@ re-earned in the new kernel structure."
 
 ## Takeaways
 
-- The **algorithm** (tiling + online softmax + recomputation) gives the same
-  ~17–65× memory reduction and the same OOM boundary independent of
-  implementation language or hardware features used — that part is "free"
-  once you've translated the paper correctly.
+- The **algorithm** (tiling + online softmax + recomputation) gives a
+  ~17–65× memory reduction and pushes the OOM boundary out (naive OOMs by
+  N=16384, flash keeps scaling to N=32768) — that part is "free" once you've
+  translated the paper correctly, independent of the hardware-utilization
+  work below.
 - The **wall-clock speedup is not free** and decomposes into separable,
   measurable pieces: deferred normalization (~1.2–1.5×, FlashAttention-2's
   contribution), and tensor cores (~1.8–3.9×, by far the largest lever here,
   forward and backward both). Stacking algorithm + deferred-norm +
-  tensor-cores takes forward+backward from "naive→FMA: 1.75× faster than
-  naive, ~23× slower than Triton" to "naive→WMMA: 4–5× faster than naive,
-  ~10× slower than Triton" — most of the remaining gap to a real production
-  kernel is compiler-level scheduling (pipelining, occupancy, warp
-  specialization) that Triton and hand-tuned CUTLASS both do and this
+  tensor-cores takes forward+backward from ~1.75× faster than naive (FMA) to
+  ~4–5× faster than naive (WMMA) — most of the remaining gap to a real
+  production kernel (see [`compare/`](../compare/) for the measured gap
+  against `FA_official`) is compiler/library-level scheduling (pipelining,
+  occupancy, warp specialization) that hand-tuned CUTLASS does and this
   hand-written WMMA code doesn't attempt, plus the specific missing
   causal-tile-skip in the backward WMMA kernels noted above.
 - **Forward and backward needed separate tensor-core kernels**, and backward
@@ -262,8 +256,8 @@ re-earned in the new kernel structure."
   point ("Compiling to CUDA"): writing a *correct* IO-aware kernel by hand is
   very achievable (both the FMA and WMMA versions here passed every
   correctness test on the first real run); writing a *fast* one requires
-  progressively more of what compilers like Triton (or libraries like
-  CUTLASS) automate — tiling and softmax fusion get you the algorithm,
+  progressively more of what compiler-level scheduling and libraries like
+  CUTLASS automate — tiling and softmax fusion get you the algorithm,
   tensor cores get you most of the remaining hardware throughput, and the
   last mile is scheduling (plus optimizations like causal-tile-skipping that
   have to be re-earned in each new kernel structure) that's genuinely hard
