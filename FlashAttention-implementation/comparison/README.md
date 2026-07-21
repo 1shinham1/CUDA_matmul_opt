@@ -1,10 +1,9 @@
-# compare — FA_with_cuda vs. FA_official, head-to-head
+# comparison — custom CUDA vs. official FA1, head-to-head
 
-Everything in [`FA_with_cuda/README.md`](../FA_with_cuda/README.md) compares
-`FA_with_cuda`'s own kernels against each other (naive vs. flash, FMA vs.
-WMMA). This directory is the one place that benchmarks
-`FA_with_cuda`'s WMMA forward kernel directly against
-[`FA_official/`](../FA_official/) — the paper's real, CUTLASS-based
+[`docs/IMPLEMENTATION.md`](../docs/IMPLEMENTATION.md) compares the custom
+CUDA kernels against each other (naive vs. flash, FMA vs. WMMA). This
+directory benchmarks the custom WMMA forward kernel directly against
+[`official/`](../official/) — the paper's real, CUTLASS-based
 FlashAttention-1 kernel — at matching configs, forward pass, non-causal,
 fp16.
 
@@ -54,9 +53,9 @@ but the paper grid's shrinking batch as seq_len grows gives `FA_official`'s
 more mature occupancy/scheduling relatively more room to show its advantage).
 
 This is the same kernel documented in
-[`FA_with_cuda/README.md`](../FA_with_cuda/README.md#3-tensor-cores-benchmark_tc-the-big-lever)
+[`docs/IMPLEMENTATION.md`](../docs/IMPLEMENTATION.md#3-tensor-cores-benchmark_tc-the-big-lever)
 and analyzed for remaining bottlenecks in
-[`FA_with_cuda/OPTIMIZATION_PLAN.md`](../FA_with_cuda/OPTIMIZATION_PLAN.md) —
+[`docs/OPTIMIZATION_PLAN.md`](../docs/OPTIMIZATION_PLAN.md) —
 the gap to `FA_official` here is the same class of missing optimizations
 (S/P round-trip through shared memory forced by the opaque `nvcuda::wmma`
 API vs. `FA_official`'s raw `mma.sync`, no warp-tiling across the key
@@ -67,13 +66,13 @@ different problem.
 
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh && conda activate cuda_env   # has flash_attn (FA_official) installed
-cd compare
+cd FlashAttention-implementation/comparison
 python compare.py              # fixed batch=4/heads=8/head_dim=64 grid -> compare.csv
 python compare_paper_grid.py   # paper's own grid, head_dim in {64,128}  -> compare_paper_grid.csv
 ```
 
-Both scripts reuse `FA_with_cuda`'s already-generated
-`results_tc_noncausal.csv` / `results_tc_paper_grid.csv` (run
-`./benchmark_tc` in `FA_with_cuda/` first if those don't exist yet) and only
+Both scripts reuse the custom implementation's already-generated
+`results/results_tc_noncausal.csv` and `results_tc_paper_grid.csv` (run
+`make run` at the project root first if those don't exist yet) and only
 benchmark `FA_official` fresh, via its own `flash_attn_unpadded_qkvpacked_func`
 call path.

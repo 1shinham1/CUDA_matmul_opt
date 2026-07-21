@@ -1,30 +1,82 @@
-# FlashAttention-implementation
+# FlashAttention implementation
 
-A reproduction of FlashAttention (Dao, Fu, Ermon, Rudra, Ré — 2022) in plain
-C++/CUDA, benchmarked against both naive attention and the paper's own
-reference implementation on an RTX 4090:
+FlashAttention의 알고리즘과 CUDA 최적화 효과를 단계별로 비교하는 프로젝트다.
+공통 CUDA 헤더는 `include/`, 실행 가능한 벤치마크 소스는 `src/`, 정확성
+테스트는 `tests/`에 둔다. 비교용 외부 구현과 비교 스크립트는 `official/`과
+`comparison/`으로 격리한다.
 
-- **[FA_with_cuda/](FA_with_cuda/)** — hand-written `__global__` kernels
-  compiled with `nvcc`, no PyTorch, no Triton, verified against a
-  from-scratch double-precision CPU reference (every kernel, FMA and WMMA,
-  forward and backward, passed on the first real GPU run). Q/K/V/O(/dQ/dK/dV/dO)
-  are fp16 (matching the paper), everything else fp32. Three layered
-  comparisons, each isolating one effect: naive vs. flash (algorithm alone,
-  ~2.5×), deferred-normalization vs. literal-Algorithm-1/2
-  (FlashAttention-2's contribution, ~1.2–1.5×), and FMA-loop vs.
-  `nvcuda::wmma` tensor cores — forward *and* backward, ~1.8–3.9× —
-  referenced against [FA_official/](FA_official/), the paper's own
-  CUTLASS-based repo. Stacked together, naive→WMMA is 4–11× faster than
-  naive. See that directory's README for the full breakdown and what it
-  shows about the paper's Section 5 point on why writing fast IO-aware
-  kernels by hand is hard.
-- **[FA_official/](FA_official/)** — the paper's own reference implementation
-  (cloned for comparison), used to check how the real CUDA kernels use
-  tensor cores (CUTLASS warp-level MMA / raw PTX `mma.sync`).
-- **[compare/](compare/)** — head-to-head benchmarks of `FA_with_cuda`'s WMMA
-  kernel directly against `FA_official`, at matching configs:
-  **~2.5–13× slower** than the real FA1 kernel, worst around seq_len
-  2048–4096.
+## Directory layout
 
-Each subdirectory with its own results has a README with the full
-results/tables and a "how to run" section.
+```text
+FlashAttention-implementation/
+├── README.md
+├── Makefile
+├── run.sh
+├── comparison/                    # 자체 WMMA와 official FA1 비교
+├── official/                      # 비교용 FlashAttention v1.0.9
+├── bin/                           # 컴파일 산출물
+├── include/
+│   ├── common.cuh                 # CPU reference, allocator, timer
+│   ├── naive_kernels.cuh          # unfused naive attention
+│   ├── flash_kernels.cuh          # CUDA Core/FMA FlashAttention
+│   └── flash_kernels_tc.cuh       # Tensor Core/WMMA FlashAttention
+├── tests/
+│   ├── test_naive.cu
+│   ├── test_flash.cu
+│   └── test_flash_tc.cu
+├── src/
+│   ├── benchmark_algorithm.cu
+│   ├── benchmark_normalization.cu
+│   ├── benchmark_tensor_core.cu
+│   └── benchmark_paper_grid.cu
+├── scripts/
+│   └── benchmark.sh
+├── results/
+└── docs/
+    ├── IMPLEMENTATION.md
+    └── OPTIMIZATION_PLAN.md
+```
+
+## Implementations
+
+| 단계 | 파일 | 목적 |
+|---|---|---|
+| CPU reference | `include/common.cuh` | fp64 중심의 정답 계산 |
+| Naive CUDA | `include/naive_kernels.cuh` | `N×N` 중간 행렬을 저장하는 baseline |
+| Flash FMA | `include/flash_kernels.cuh` | 타일링, online softmax, backward 재계산 |
+| Flash WMMA | `include/flash_kernels_tc.cuh` | 두 행렬곱을 Tensor Core로 실행 |
+
+Q/K/V/O와 gradient 저장은 fp16이고 softmax 및 주요 누적은 fp32다.
+WMMA forward는 현재 `HEAD_DIM=64` 전용이다.
+
+## Build and test
+
+기본 GPU target은 RTX 4090용 `sm_89`다. `nvcc`가 PATH에 있어야 한다.
+
+```bash
+cd FlashAttention-implementation
+make
+./run.sh
+
+# 다른 GPU architecture
+make ARCH=sm_80
+```
+
+빌드 산출물은 `bin/`에만 생성된다. 이전 target 이름도 호환된다.
+
+```bash
+make test_flash_tc
+make benchmark_tc
+```
+
+## Benchmark
+
+```bash
+make run
+# 또는
+./scripts/benchmark.sh
+```
+
+최신 CSV는 `results/results_*.csv`, 실행별 snapshot은
+`results/runs/<timestamp>/`에 생성된다. 자세한 구현과 기존 측정 결과는
+[`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md)를 참고한다.

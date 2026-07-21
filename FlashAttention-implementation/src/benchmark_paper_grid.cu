@@ -17,7 +17,7 @@ static int iters_for(int seq_len) {
 
 int main() {
     int seq_lens[] = {512, 1024, 2048, 4096, 8192, 16384};
-    std::ofstream csv("results_tc_paper_grid.csv");
+    std::ofstream csv("results/results_tc_paper_grid.csv");
     csv << "seq_len,batch,heads,tc_fwd_ms\n";
     printf("head_dim=%d, heads=%d (hidden_dim=2048)\n", HEAD_DIM, HEADS);
     printf("%8s %6s %6s %10s\n", "seq_len", "batch", "heads", "tc_fwd_ms");

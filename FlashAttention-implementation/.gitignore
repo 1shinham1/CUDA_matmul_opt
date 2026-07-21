@@ -7,7 +7,7 @@ __pycache__/
 
 # Distribution / packaging
 bin/
-build/
+results/runs/
 develop-eggs/
 dist/
 eggs/

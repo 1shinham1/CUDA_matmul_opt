@@ -16,26 +16,22 @@ compute fp32" split PyTorch AMP uses.
 
 | File | Contents |
 |---|---|
-| `common.cuh` | Error-checking macros, a byte-tracking device allocator (`DeviceAllocTracker`), a CUDA-event timer, fp16↔fp32 conversion helpers (`to_half`/`to_float`/`snap_to_half`), and the double-precision CPU reference (`ref_forward`/`ref_backward`) used as ground truth for every test. |
-| `naive_kernels.cuh` | Standard attention (Algorithm 0 forward / Algorithm 3 backward) as **unfused** kernels: `naive_scores_kernel` (S=QKᵀ), `naive_softmax_kernel`, `naive_output_kernel` (O=PV), then `naive_dv/dp/ds/dq/dk_kernel` for the backward. Every intermediate (S, P, dP, dS) is its own fp32 `N×N` buffer in global memory — no shared memory, no tiling. |
-| `flash_kernels.cuh` | FlashAttention forward (`flash_fwd_kernel`) and backward (`flash_bwd_dkdv_kernel` + `flash_bwd_dq_kernel`) as fused, tiled kernels with explicit `__shared__` memory tiles and the online-softmax recurrence (plain scalar FMA loops, no tensor cores). Also contains `flash_fwd_kernel_strict`, which normalizes every K/V tile instead of deferring to the end (see "Literal Algorithm 1/2" below). |
-| `flash_kernels_tc.cuh` | The tensor-core forward (`flash_fwd_kernel_tc`) and backward (`flash_bwd_dkdv_kernel_tc` + `flash_bwd_dq_kernel_tc`) kernels, using CUDA's `nvcuda::wmma` API — see "Tensor cores" below. |
-| `test_naive.cu`, `test_flash.cu`, `test_flash_tc.cu` | Correctness tests: GPU output vs. the fp64 CPU reference, across shapes/causal/non-causal/non-block-aligned N. |
-| `benchmark.cu` | Runtime + peak-memory sweep, forward-only and forward+backward, naive vs. flash (no tensor cores). |
-| `benchmark_norm.cu` | `flash_fwd_kernel` vs. `flash_fwd_kernel_strict` runtime only — isolates the effect of deferring normalization. |
-| `benchmark_tc.cu` | naive vs. flash(FMA) vs. flash(WMMA), forward-only and forward+backward — isolates the effect of tensor cores. |
-| `Makefile` | `make all` builds everything with `nvcc -O3 -arch=sm_89`. |
+| `include/common.cuh` | Error-checking macros, a byte-tracking device allocator (`DeviceAllocTracker`), a CUDA-event timer, fp16↔fp32 conversion helpers (`to_half`/`to_float`/`snap_to_half`), and the double-precision CPU reference (`ref_forward`/`ref_backward`) used as ground truth for every test. |
+| `include/naive_kernels.cuh` | Standard attention (Algorithm 0 forward / Algorithm 3 backward) as **unfused** kernels: `naive_scores_kernel` (S=QKᵀ), `naive_softmax_kernel`, `naive_output_kernel` (O=PV), then `naive_dv/dp/ds/dq/dk_kernel` for the backward. Every intermediate (S, P, dP, dS) is its own fp32 `N×N` buffer in global memory — no shared memory, no tiling. |
+| `include/flash_kernels.cuh` | FlashAttention forward (`flash_fwd_kernel`) and backward (`flash_bwd_dkdv_kernel` + `flash_bwd_dq_kernel`) as fused, tiled kernels with explicit `__shared__` memory tiles and the online-softmax recurrence (plain scalar FMA loops, no tensor cores). Also contains `flash_fwd_kernel_strict`, which normalizes every K/V tile instead of deferring to the end (see "Literal Algorithm 1/2" below). |
+| `include/flash_kernels_tc.cuh` | The tensor-core forward (`flash_fwd_kernel_tc`) and backward (`flash_bwd_dkdv_kernel_tc` + `flash_bwd_dq_kernel_tc`) kernels, using CUDA's `nvcuda::wmma` API — see "Tensor cores" below. |
+| `tests/*.cu` | Correctness tests: GPU output vs. the fp64 CPU reference, across shapes/causal/non-causal/non-block-aligned N. |
+| `src/*.cu` | Algorithm, normalization, Tensor Core, and paper-grid benchmarks. |
+| `Makefile` | `make all` builds everything into `bin/` with `nvcc -O3 -arch=sm_89`. |
 
 ## Build & run
 
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh && conda activate cuda_env   # has nvcc
-cd FA_with_cuda
+cd FlashAttention-implementation
 make all
-./test_naive && ./test_flash && ./test_flash_tc   # correctness, all vs. fp64 CPU reference
-./benchmark [causal]        # naive vs. flash(FMA), fwd and fwd+bwd -> results_*causal.csv
-./benchmark_norm [causal]   # deferred-normalization vs. literal-Algorithm-1/2 -> results_norm_*.csv
-./benchmark_tc [causal]     # naive vs. flash(FMA) vs. flash(WMMA tensor core) -> results_tc_*.csv
+./run.sh                    # correctness, all vs. fp64 CPU reference
+make run                    # all benchmark variants -> results/results_*.csv
 ```
 
 ## Results (RTX 4090, batch·heads=32, head_dim=64)
@@ -134,9 +130,8 @@ Switching on tensor cores alone (same algorithm, same tiling, same fp16
 storage — only the matmuls change) is worth **~1.8–3.9×** on top of the
 FMA-loop flash kernels, forward and backward included. Combined with the
 algorithmic win over naive, the WMMA kernels are **4–11× faster than
-naive**, versus the FMA kernels' ~2.5×. The remaining gap to a real
-production kernel (see [`compare/`](../compare/) for head-to-head numbers
-against `FA_official`) comes from what a real compiler/library does that
+naive**, versus the FMA kernels' ~2.5×. The remaining gap to a production
+kernel comes from what a real compiler/library does that
 this hand-written WMMA code doesn't (software pipelining/double-buffering of
 shared-memory loads against compute, better occupancy tuning, possibly warp
 specialization, and — specifically for backward — the causal-skip
@@ -144,16 +139,9 @@ optimization noted above that the WMMA kernels here are missing).
 
 ## Tensor cores: what changed and why it works
 
-**Reference check.** [`FA_official/`](../FA_official/) (the paper's own repo)
-implements its tensor-core matmuls via CUTLASS's warp-level MMA abstraction
-(`csrc/flash_attn/src/fmha/gemm.h`), which itself lowers to raw PTX
-`mma.sync.aligned.m16n8k16` instructions. Pulling in CUTLASS wholesale for
-this project wasn't worth the risk/complexity, so `flash_fwd_kernel_tc` uses
-**`nvcuda::wmma`** instead (`<mma.h>`, ships with the CUDA toolkit, no extra
-dependency) — a documented, higher-level C++ API for the *same* underlying
-tensor-core hardware instructions, at some cost in peak performance versus
-hand-tuned raw-PTX/CUTLASS code (see [`compare/`](../compare/) for the
-measured gap against `FA_official`).
+`flash_fwd_kernel_tc` uses **`nvcuda::wmma`** (`<mma.h>`, included with the
+CUDA toolkit), so no additional matrix-multiplication library is required.
+It is a documented, higher-level C++ interface to Tensor Core tile operations.
 
 **Why the kernel had to be restructured.** `flash_fwd_kernel` (FMA version)
 uses "1 CUDA thread = 1 query row." WMMA can't work that way: a `wmma`
@@ -239,9 +227,8 @@ re-earned in the new kernel structure."
   contribution), and tensor cores (~1.8–3.9×, by far the largest lever here,
   forward and backward both). Stacking algorithm + deferred-norm +
   tensor-cores takes forward+backward from ~1.75× faster than naive (FMA) to
-  ~4–5× faster than naive (WMMA) — most of the remaining gap to a real
-  production kernel (see [`compare/`](../compare/) for the measured gap
-  against `FA_official`) is compiler/library-level scheduling (pipelining,
+  ~4–5× faster than naive (WMMA) — most of the remaining gap to a production
+  kernel is compiler/library-level scheduling (pipelining,
   occupancy, warp specialization) that hand-tuned CUTLASS does and this
   hand-written WMMA code doesn't attempt, plus the specific missing
   causal-tile-skip in the backward WMMA kernels noted above.

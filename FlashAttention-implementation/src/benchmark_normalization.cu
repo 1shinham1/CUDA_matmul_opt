@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
            BH, HEAD_DIM, causal);
 
     int seq_lens[] = {128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768};
-    std::ofstream csv(causal ? "results_norm_causal.csv" : "results_norm_noncausal.csv");
+    std::ofstream csv(causal ? "results/results_norm_causal.csv" : "results/results_norm_noncausal.csv");
     csv << "seq_len,deferred_ms,strict_ms,slowdown\n";
     printf("%8s | %12s %12s | %10s\n", "seq_len", "deferred(ms)", "strict(ms)", "slowdown");
 

@@ -3,12 +3,8 @@
 // 행렬곱을 손으로 짠 FMA 반복문 대신 CUDA 표준 텐서 코어 API인
 // nvcuda::wmma(<mma.h>, 워프 단위 16x16x16 MMA)로 계산한다.
 //
-// FA_official(논문 원본 저장소, csrc/flash_attn/src/fmha/gemm.h)은 CUTLASS의
-// warp-level MMA 추상화(내부적으로는 raw PTX `mma.sync.aligned.m16n8k16`
-// 명령어)를 쓴다. 여기서는 CUTLASS 전체를 가져오는 대신, 같은 텐서 코어
-// 하드웨어를 쓰지만 CUDA 툴킷에 기본 내장되어 있고 훨씬 사용법이 단순한
-// nvcuda::wmma API를 쓴다 -- 원리는 동일: "16x16 타일 하나를 한 워프(32
-// 스레드)가 협력해서 텐서 코어로 계산".
+// CUDA 툴킷에 내장된 nvcuda::wmma API를 사용한다. 핵심 실행 단위는
+// "16x16 타일 하나를 한 워프(32 스레드)가 협력해서 계산"하는 구조다.
 //
 // [스레드/워프 배치] flash_fwd_kernel(비-텐서코어 버전)은 "스레드 1개 = 쿼리
 // 행 1개"였지만, WMMA는 반드시 "워프 32개 스레드가 협력해서 16x16 타일

@@ -53,7 +53,7 @@ manually at the commit flash-attention v1.0.9 actually pins (confirmed via
 `https://api.github.com/repos/Dao-AILab/flash-attention/contents/csrc/flash_attn/cutlass?ref=v1.0.9`):
 
 ```
-cd FA_official
+cd FlashAttention-implementation/official
 git clone https://github.com/NVIDIA/cutlass.git csrc/flash_attn/cutlass_tmp
 cd csrc/flash_attn/cutlass_tmp
 git checkout 319a389f42b776fae5701afcb943fc03be5b5c25
@@ -70,7 +70,7 @@ rm -rf csrc/flash_attn/cutlass/.git
 
 ```
 pip install ninja packaging  # ninja: parallel build, ~5min instead of ~2h
-cd FA_official
+cd FlashAttention-implementation/official
 MAX_JOBS=8 pip install -e . --no-build-isolation
 ```
 

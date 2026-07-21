@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
 
     int seq_lens[] = {128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768};
     bool naive_fwd_feasible = true, naive_fb_feasible = true;
-    std::ofstream csv(causal ? "results_tc_causal.csv" : "results_tc_noncausal.csv");
+    std::ofstream csv(causal ? "results/results_tc_causal.csv" : "results/results_tc_noncausal.csv");
     csv << "seq_len,naive_fwd_ms,fma_fwd_ms,tc_fwd_ms,naive_fb_ms,fma_fb_ms,tc_fb_ms,"
            "tc_fwd_vs_naive,tc_fwd_vs_fma,tc_fb_vs_naive,tc_fb_vs_fma\n";
     printf("%8s | %9s %9s %9s | %10s %10s %10s | %8s %8s\n",

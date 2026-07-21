@@ -175,30 +175,43 @@ inline void snap_to_half(std::vector<float>& v) {
 // ---------------------------------------------------------------------------
 
 // Forward: O = softmax(QK^T / sqrt(d)) V  (causal=true면 미래 위치는 마스킹)
+//BH: batch × attention heads
+//N = seq_len: 토큰 수
+//d: head dimension
+//Q, K, V: 논리적 shape [BH, seq_len, head_dim]
+//S = QKᵀ / √d: attention score
+//P = softmax(S): attention 확률
+//O = PV: attention 출력
+//dO: 출력 O로부터 전달받은 gradient
 inline void ref_forward(const std::vector<float>& Q, const std::vector<float>& K,
                          const std::vector<float>& V, std::vector<float>& O,
                          int BH, int seq_len, int d, bool causal) {
-    double scale = 1.0 / std::sqrt((double)d);
-    std::vector<double> row(seq_len);
+    double scale = 1.0 / std::sqrt((double)d);              // 1/(d)^0.5
+    std::vector<double> row(seq_len);                       // q의 1행의 score 저장
     for (int bh = 0; bh < BH; bh++) {
         const float* Qb = &Q[(size_t)bh * seq_len * d];
         const float* Kb = &K[(size_t)bh * seq_len * d];
         const float* Vb = &V[(size_t)bh * seq_len * d];
         float* Ob = &O[(size_t)bh * seq_len * d];
         for (int i = 0; i < seq_len; i++) {                 // 쿼리(질의) 위치 i
-            int jmax = causal ? (i + 1) : seq_len;           // causal이면 j<=i까지만
+            int jmax = causal ? (i + 1) : seq_len;          // causal이면 j<=i까지만
             // 1단계: 이 행(row)의 점수 S_ij = scale * Q_i . K_j 를 전부 계산하면서 행 최댓값 m도 같이 구함
-            double m = -1e300;
+            double m = -1e300;                              // score 행의  최댓값을 저장하는 변수
             for (int j = 0; j < jmax; j++) {
                 double s = 0.0;
-                for (int t = 0; t < d; t++) s += (double)Qb[i * d + t] * Kb[j * d + t];
+                for (int t = 0; t < d; t++) {
+                    s += (double)Qb[i * d + t] * Kb[j * d + t]; //Q_i * K_j 계산
+                }
                 s *= scale;
                 row[j] = s;
                 if (s > m) m = s;
             }
             // 2단계: 수치 안정적인 softmax -- exp(s - m)로 오버플로우 방지
-            double l = 0.0;
-            for (int j = 0; j < jmax; j++) { row[j] = std::exp(row[j] - m); l += row[j]; }
+            double l = 0.0; // 지수 계산과 분모 합산
+            for (int j = 0; j < jmax; j++) {
+                row[j] = std::exp(row[j] - m);
+                l += row[j];
+            }
             // 3단계: O_i = sum_j softmax(S)_ij * V_j
             for (int t = 0; t < d; t++) {
                 double acc = 0.0;
@@ -217,6 +230,8 @@ inline void ref_forward(const std::vector<float>& Q, const std::vector<float>& K
 //   dS_ij = P_ij * (dP_ij - D_i)
 //   dQ_i = sum_j dS_ij * scale * K_j
 //   dK_j = sum_i dS_ij * scale * Q_i
+
+//dO -> dV,dP -> dS -> dQ,dK
 inline void ref_backward(const std::vector<float>& Q, const std::vector<float>& K,
                           const std::vector<float>& V, const std::vector<float>& dO,
                           std::vector<float>& dQ, std::vector<float>& dK, std::vector<float>& dV,
@@ -251,7 +266,9 @@ inline void ref_backward(const std::vector<float>& Q, const std::vector<float>& 
             for (int j = 0; j < jmax; j++) { P[j] = std::exp(P[j] - m); l += P[j]; }
             for (int j = 0; j < jmax; j++) P[j] /= l;
 
-            // dV_j += P_ij * dO_i ; dP_ij = dO_i . V_j ; D_i = sum_j P_ij*dP_ij
+            // dV_j += P_ij * dO_i ; 
+            // dP_ij = dO_i . V_j ; 
+            // D_i = sum_j P_ij*dP_ij
             std::vector<double> dP(jmax);
             double D = 0.0;
             for (int j = 0; j < jmax; j++) {

@@ -166,7 +166,7 @@ void flash_forward_launch(const __half* Q, const __half* K, const __half* V, __h
 // 최종 결과값은 flash_fwd_kernel과 완전히 동일하다 (마지막 반복에서 쓰는
 // 값이 결국 진짜 최종값이고, 그 전 반복들의 쓰기는 그저 나중에 덮어써질
 // "낭비된 중간 결과"일 뿐이므로). 차이는 오직 "타일 개수(T_c)만큼 나눗셈과
-// HBM 쓰기를 더 한다"는 실행 비용에만 있다 -- 그래서 benchmark_norm.cu에서
+// HBM 쓰기를 더 한다"는 실행 비용에만 있다 -- 그래서 benchmark_normalization.cu에서
 // 이 커널과 flash_fwd_kernel의 실행 시간만 비교하면 "정규화를 미루는 것"
 // 하나의 효과를 순수하게 분리해서 측정할 수 있다.
 template <int HEAD_DIM, int BLOCK_N>

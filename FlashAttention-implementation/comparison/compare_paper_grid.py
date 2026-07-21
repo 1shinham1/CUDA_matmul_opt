@@ -1,4 +1,4 @@
-"""Compare FA_with_cuda vs the official FlashAttention v1.0.9 (FA_official)
+"""Compare FA_with_cuda vs the official FlashAttention v1.0.9 (official)
 on the paper's own benchmark grid (head_dim in {64, 128}, hidden_dim=2048 ->
 heads = hidden_dim/head_dim, seq_len in {512..16384}, batch = 16384/seq_len),
 forward pass, non-causal.
@@ -18,7 +18,8 @@ import pandas as pd
 from flash_attn.flash_attn_interface import flash_attn_unpadded_qkvpacked_func
 
 HERE = os.path.dirname(__file__)
-CUDA_CSV = os.path.join(HERE, "..", "FA_with_cuda", "results_tc_paper_grid.csv")
+RESULTS_DIR = os.path.join(HERE, "..", "results")
+CUDA_CSV = os.path.join(RESULTS_DIR, "results_tc_paper_grid.csv")
 
 dtype = torch.float16
 hidden_dim = 2048
@@ -75,4 +76,4 @@ if __name__ == "__main__":
     df = pd.DataFrame(rows)
     print("\n=== forward pass, ms (lower is faster; FA_with_cuda blank = head_dim=128 not implemented) ===")
     print(df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
-    df.to_csv(os.path.join(HERE, "compare_paper_grid.csv"), index=False)
+    df.to_csv(os.path.join(RESULTS_DIR, "compare_paper_grid.csv"), index=False)

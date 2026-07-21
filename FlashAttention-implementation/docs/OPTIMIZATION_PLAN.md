@@ -14,14 +14,9 @@ shipped.
 ## Context
 
 `flash_fwd_kernel_tc` (the tensor-core/WMMA FlashAttention forward kernel in
-`flash_kernels_tc.cuh`) currently runs at only **~9-13% of a Triton
-reference's** forward-pass speed (measured via `benchmark_tc.cu`'s
-`results_tc_*.csv` against a since-lost Triton benchmark CSV — that
-comparison source no longer exists in this repo; see
-[`compare/`](../compare/) for the current, reproducible comparison target,
-against `FA_official` instead), even though both use the same tensor-core
-hardware. The user wants to close that gap, with a realistic first target
-somewhere on the way to ~80%.
+`include/flash_kernels_tc.cuh`) had too little tensor-core work between
+synchronization points. The goal of this pass was to improve that kernel's
+hardware utilization without changing its public launcher interface.
 
 Root cause (established via code reading + a live `-Xptxas -v` build): the
 kernel processes only **one 16×16 WMMA tile of keys per outer-loop
@@ -64,7 +59,8 @@ partially-offsetting cost that should be measured, not assumed away.
 All changes are confined to `flash_fwd_kernel_tc` and `flash_forward_launch_tc`
 in **`flash_kernels_tc.cuh`**. Public signature
 `flash_forward_launch_tc<HEAD_DIM>(Q,K,V,O,L,BH,seq_len,causal)` stays
-unchanged — `test_flash_tc.cu` and `benchmark_tc.cu` keep compiling as-is.
+unchanged — `tests/test_flash_tc.cu` and `src/benchmark_tensor_core.cu`
+keep compiling as-is.
 Add `static_assert(HEAD_DIM == 64, ...)` (or similar) so instantiating with
 another head_dim fails loudly at compile time instead of overflowing shared
 memory silently at runtime, since this pass doesn't implement a fallback for
@@ -155,33 +151,25 @@ new byte count).
 
 ## Verification
 
-1. `cd FA_with_cuda && make test_flash_tc && ./test_flash_tc` — all 7 cases
+1. `make test_flash_tc && bin/test_flash_wmma` — all 7 cases
    must print `OK` (fp64 CPU reference **and** FMA-kernel cross-check,
    `tol=3e-2`), including both `seq_len=130` (non-multiple-of-64 boundary)
    cases and both causal cases. Note this test also exercises the (untouched)
    backward TC kernels, which depend on `O_tc`/`L_tc` from the forward
    kernel, so a full run (not a forward-only subset) is required.
-2. `compute-sanitizer --tool memcheck ./test_flash_tc` — 0 errors.
-3. `compute-sanitizer --tool racecheck ./test_flash_tc` — 0 errors (the
+2. `compute-sanitizer --tool memcheck bin/test_flash_wmma` — 0 errors.
+3. `compute-sanitizer --tool racecheck bin/test_flash_wmma` — 0 errors (the
    critical check for double-buffering hazards: wrong
    `producer_acquire`/`consumer_release` sequencing would show up here as a
    WAR/WAW hazard on the `Ks`/`Vs` stage buffers).
-4. `compute-sanitizer --tool synccheck ./test_flash_tc` — 0 errors (new
+4. `compute-sanitizer --tool synccheck bin/test_flash_wmma` — 0 errors (new
    check, relevant because of the mixed pipeline + explicit `__syncthreads()`
    in the boundary-tile path).
 5. `nvcc -Xptxas -v` on the rebuilt kernel — confirm no unexpected register
    spills (baseline today: 123 regs/thread, 0 spills).
-6. `make benchmark_tc && ./benchmark_tc && ./benchmark_tc causal` —
+6. `make benchmark_tc && bin/benchmark_tensor_core && bin/benchmark_tensor_core causal` —
    regenerate `results_tc_noncausal.csv` / `results_tc_causal.csv`.
-7. Compute the updated gap to production: `cd ../compare && python compare.py`
-   (see [`compare/README.md`](../compare/README.md)) recomputes the
-   head-to-head ratio against `FA_official` using the regenerated
-   `results_tc_*.csv` from step 6. Compare against `compare/README.md`'s
-   recorded tables.
 
 ### Critical files
-- `flash_kernels_tc.cuh` (all changes)
-- `test_flash_tc.cu`, `benchmark_tc.cu` (run unmodified, for verification)
-- `../compare/compare.py`, `../compare/README.md` (current head-to-head
-  comparison against `FA_official` — the original Triton-comparison CSV
-  referenced earlier in this doc no longer exists in this repo)
+- `include/flash_kernels_tc.cuh` (all changes)
+- `tests/test_flash_tc.cu`, `src/benchmark_tensor_core.cu` (run unmodified, for verification)
