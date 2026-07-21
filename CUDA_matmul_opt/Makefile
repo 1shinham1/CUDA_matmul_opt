@@ -19,8 +19,8 @@ TARGETS := \
     bin/10_gemm_tc_naive      \
     bin/11_gemm_tc_shared_memory \
     bin/12_gemm_tc_warptiling \
-    bin/13_gemm_tc_doublebuffer \
-	bin/14_gemm_tc_vectorization \
+    bin/13_gemm_tc_vectorization \
+	bin/14_gemm_tc_doublebuffer \
 	bin/15_gemm_tc_param_tune		\
 	bin/16_gemm_tc_swizzle		\
     bin/utils_device_info
@@ -86,8 +86,8 @@ PROFILES := \
     $(PROFILE_DIR)/10_tc_naive.ncu-rep        \
     $(PROFILE_DIR)/11_tc_shared_mem.ncu-rep   \
     $(PROFILE_DIR)/12_tc_warptiling.ncu-rep   \
-    $(PROFILE_DIR)/13_tc_doublebuffer.ncu-rep \
-    $(PROFILE_DIR)/14_tc_vectorization.ncu-rep \
+    $(PROFILE_DIR)/13_tc_vectorization.ncu-rep \
+    $(PROFILE_DIR)/14_tc_doublebuffer.ncu-rep \
     $(PROFILE_DIR)/15_tc_param_tune.ncu-rep   \
     $(PROFILE_DIR)/16_tc_swizzle.ncu-rep
 
@@ -132,11 +132,11 @@ $(PROFILE_DIR)/11_tc_shared_mem.ncu-rep: bin/11_gemm_tc_shared_memory | $(PROFIL
 $(PROFILE_DIR)/12_tc_warptiling.ncu-rep: bin/12_gemm_tc_warptiling | $(PROFILE_DIR)
 	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/12_tc_warptiling ./bin/12_gemm_tc_warptiling
 
-$(PROFILE_DIR)/13_tc_doublebuffer.ncu-rep: bin/13_gemm_tc_doublebuffer | $(PROFILE_DIR)
-	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/13_tc_doublebuffer ./bin/13_gemm_tc_doublebuffer
+$(PROFILE_DIR)/13_tc_vectorization.ncu-rep: bin/13_gemm_tc_vectorization | $(PROFILE_DIR)
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/13_tc_vectorization ./bin/13_gemm_tc_vectorization
 
-$(PROFILE_DIR)/14_tc_vectorization.ncu-rep: bin/14_gemm_tc_vectorization | $(PROFILE_DIR)
-	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/14_tc_vectorization ./bin/14_gemm_tc_vectorization
+$(PROFILE_DIR)/14_tc_doublebuffer.ncu-rep: bin/14_gemm_tc_doublebuffer | $(PROFILE_DIR)
+	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/14_tc_doublebuffer ./bin/14_gemm_tc_doublebuffer
 
 $(PROFILE_DIR)/15_tc_param_tune.ncu-rep: bin/15_gemm_tc_param_tune | $(PROFILE_DIR)
 	ncu -f --set full --launch-skip 5 --launch-count 1 -o $(PROFILE_DIR)/15_tc_param_tune ./bin/15_gemm_tc_param_tune
@@ -159,10 +159,10 @@ bin/11_gemm_tc_shared_memory: src/11_gemm_tc_shared_memory.cu
 bin/12_gemm_tc_warptiling:   src/12_gemm_tc_warptiling.cu
 	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
-bin/13_gemm_tc_doublebuffer: src/13_gemm_tc_doublebuffer.cu
+bin/13_gemm_tc_vectorization: src/13_gemm_tc_vectorization.cu
 	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
-bin/14_gemm_tc_vectorization: src/14_gemm_tc_vectorization.cu
+bin/14_gemm_tc_doublebuffer: src/14_gemm_tc_doublebuffer.cu
 	$(NVCC) $(LINEINFO) $(ARCH) $(INCLUDES) $(OMP) $< -lcublas -o $@
 
 bin/15_gemm_tc_param_tune: src/15_gemm_tc_param_tune.cu

@@ -33,8 +33,8 @@ results/
     ├── 10_tc_naive.ncu-rep
     ├── 11_tc_shared_mem.ncu-rep
     ├── 12_tc_warptiling.ncu-rep
-    ├── 13_tc_doublebuffer.ncu-rep
-    ├── 14_tc_vectorization.ncu-rep
+    ├── 13_tc_vectorization.ncu-rep
+    ├── 14_tc_doublebuffer.ncu-rep
     ├── 15_tc_param_tune.ncu-rep
     └── 16_tc_swizzle.ncu-rep
 ```

@@ -18,8 +18,8 @@ TC_KERNELS=(
     "10|TC Naive         |bin/10_gemm_tc_naive"
     "11|TC Shared Memory |bin/11_gemm_tc_shared_memory"
     "12|TC Warp Tiling   |bin/12_gemm_tc_warptiling"
-    "13|TC Double Buffer |bin/13_gemm_tc_doublebuffer"
-    "14|TC Vectorization |bin/14_gemm_tc_vectorization"
+    "13|TC Vectorization |bin/13_gemm_tc_vectorization"
+    "14|TC Vectorization+DB|bin/14_gemm_tc_doublebuffer"
     "15|TC Param Tune    |bin/15_gemm_tc_param_tune"
     "16|TC Swizzle       |bin/16_gemm_tc_swizzle"
 )
