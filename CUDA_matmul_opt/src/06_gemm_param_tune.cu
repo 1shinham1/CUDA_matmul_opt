@@ -4,16 +4,16 @@
 #define BN 128
 #define BK 32
 
-#define TR 8
-#define TC 8
-#define NUM_THREADS ((BM/TR) * (BN/TC))  // 256
+#define TM 8
+#define TN 8
+#define NUM_THREADS ((BM/TM) * (BN/TN))  // 256
 
 __global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n) {
     int cRow = blockIdx.x;
     int cCol = blockIdx.y;
 
-    int threadRow = threadIdx.x / (BN / TC);
-    int threadCol = threadIdx.x % (BN / TC);
+    int threadRow = threadIdx.x / (BN / TN);
+    int threadCol = threadIdx.x % (BN / TN);
 
     __shared__ float As[BK * BM];
     __shared__ float Bs[BK * BN];
@@ -22,7 +22,7 @@ __global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n
     B += cCol * BN;
     C += cRow * BM * n + cCol * BN;
 
-    float threadResults[TR * TC] = {0.0f};
+    float threadResults[TM * TN] = {0.0f};
 
     // float4 로드를 위한 인덱스 (4개씩 묶어서)
     int innerRowA = threadIdx.x / (BK / 4);
@@ -56,37 +56,36 @@ __global__ void gemm_vectorize(float *A, float *B, float *C, int m, int k, int n
         B += BK * n;
 
         for (int dotIdx = 0; dotIdx < BK; dotIdx++) {
-            float Atmp[TR], Btmp[TC];
+            float Atmp[TM], Btmp[TN];
 
-            for (int i = 0; i < TR; i++)
-                Atmp[i] = As[dotIdx * BM + threadRow * TR + i];  // i에 관해서 연속
-                //vectorize 전 코드: Atmp[i] = As[(threadRow * TR + i) * BK + dotIdx];
-            for (int j = 0; j < TC; j++)
-                Btmp[j] = Bs[dotIdx * BN + threadCol * TC + j];
+            for (int i = 0; i < TM; i++)
+                Atmp[i] = As[dotIdx * BM + threadRow * TM + i];
+            for (int j = 0; j < TN; j++)
+                Btmp[j] = Bs[dotIdx * BN + threadCol * TN + j];
 
-            for (int i = 0; i < TR; i++)
-                for (int j = 0; j < TC; j++)
-                    threadResults[i * TC + j] += Atmp[i] * Btmp[j];
+            for (int i = 0; i < TM; i++)
+                for (int j = 0; j < TN; j++)
+                    threadResults[i * TN + j] += Atmp[i] * Btmp[j];
         }
 
         __syncthreads();
     }
 
     // C 저장: float4로 벡터화하여 메모리 대역폭을 더 효율적으로 사용
-    for (int i = 0; i < TR; i++) {
-        for (int j = 0; j < TC; j += 4) {
+    for (int i = 0; i < TM; i++) {
+        for (int j = 0; j < TN; j += 4) {
             reinterpret_cast<float4*>(
-                &C[(threadRow * TR + i) * n + threadCol * TC + j])[0]
-                = {threadResults[i * TC + j],
-                   threadResults[i * TC + j + 1],
-                   threadResults[i * TC + j + 2],
-                   threadResults[i * TC + j + 3]};
+                &C[(threadRow * TM + i) * n + threadCol * TN + j])[0]
+                = {threadResults[i * TN + j],
+                   threadResults[i * TN + j + 1],
+                   threadResults[i * TN + j + 2],
+                   threadResults[i * TN + j + 3]};
         }
     }
     /* float1씩 로드해서 계산했을때
-    for (int i = 0; i < TR; i++)
-        for (int j = 0; j < TC; j++)
-            C[(threadRow * TR + i) * n + threadCol * TC + j] = threadResults[i * TC + j];
+    for (int i = 0; i < TM; i++)
+        for (int j = 0; j < TN; j++)
+            C[(threadRow * TM + i) * n + threadCol * TN + j] = threadResults[i * TN + j];
     */
 }
 
@@ -104,7 +103,7 @@ int main() {
     cudaMemcpy(d_A, A.data(), sizeof(float) * M * K, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, B.data(), sizeof(float) * K * N, cudaMemcpyHostToDevice);
 
-    dim3 blockDim((BM / TR) * (BN / TC)); // (128/8)*(128/8) = 256 thread
+    dim3 blockDim((BM / TM) * (BN / TN)); // (128/8)*(128/8) = 256 thread
     dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM); //32 x 32 size
 
     cudaEvent_t start, stop;

@@ -25,6 +25,11 @@
 __device__ __forceinline__ int swizzle_a(int row, int col) {
     return col ^ (((row >> 2) & 1) << 2);
 }
+//row >> 2 : row를 4로 나눈 몫
+//& 1 : 그 결과의 최하위 비트 (0 또는 1)
+//<< 2 : 그걸 4배로 (0 또는 4 추가)
+//col ^ ... : col과 XOR
+
 // Bs[WMMA_K=8][BLOCK_TILE_N]: row stride가 32의 배수라 모든 row가 같은
 // bank window. 한 fragment 로드에서 row 4개(t=0~3 또는 4~7)가 동시에 접근
 //되는데, 32열 band 안에서 row마다 8칸씩 순환 이동(row*8 mod 32)시키면
@@ -34,6 +39,8 @@ __device__ __forceinline__ int swizzle_b(int row, int col) {
     int band = col & ~31, within = col & 31;
     return band + (within + row * 8) % 32;
 }
+// col & ~31; 상위 비트 (32 이상) 이하를 자름
+// col & 31;  하위 5비트 (0~31)
 
 // global -> shared 비동기 로드 (scalar, swizzle 적용). swizzle이 4개 원소
 // 단위 순서를 바꿔놓기 때문에(특히 As의 XOR) float4 벡터화 스토어는 순서가
