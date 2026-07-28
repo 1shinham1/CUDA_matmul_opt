@@ -1,14 +1,18 @@
-"""Compare the current baseline (01_flash_tc_naive, forward only, non-causal)
-against official FlashAttention v1.0.9 at matching config (batch=4, heads=8,
+"""Compare the project's kernel stages (forward only, non-causal) against
+official FlashAttention v1.0.9 at matching config (batch=4, heads=8,
 head_dim=64, fp16):
-  - 01_flash_tc_naive : first WMMA version (KV tile=16, single buffer) --
-                        this project's starting point
+  - 00_attention_naive: standard attention -- no fusion, no tiling, no online
+                        softmax; materializes the N*N score matrix in HBM
+  - 01_flash_tc_naive : first WMMA version (KV tile=16, single buffer,
+                        scalar sync loads) -- this project's starting point
+  - 02_flash_tc_async : 01 + cp.async 16B vectorized GMEM->SMEM loads
+                        (KV tile still 16, still single-buffered)
   - FA_official       : official FlashAttention v1.0.9, via this folder's own
                         flash_attn_unpadded_qkvpacked_func
 
-Reuses 01's already-generated CSV (no need to rebuild/rerun it), and runs a
-matching-config sweep here for the official kernel so the numbers you see are
-produced by this script's own code path.
+Reuses each stage's already-generated CSV (no need to rebuild/rerun them),
+and runs a matching-config benchmark here (seq_len=4096) for the official
+kernel so the numbers you see are produced by this script's own code path.
 
 Usage:
     python compare.py
@@ -31,12 +35,14 @@ from flash_attn.flash_attn_interface import flash_attn_unpadded_qkvpacked_func
 
 # stage name -> (csv filename, column label used in the merged table)
 STAGES = [
+    ("00_naive", "results_00_attention_naive_noncausal.csv"),
     ("01_tc_naive", "results_01_tc_naive_noncausal.csv"),
+    ("02_tc_async", "results_02_tc_async_noncausal.csv"),
 ]
 
 dtype = torch.float16
 batch, heads, head_dim = 4, 8, 64  # BH = batch * heads = 32, matches DEFAULT_BH/DEFAULT_HEAD_DIM
-seq_lens = [128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+seq_lens = [4096]
 
 
 def bench(seq_len, iters=20, warmup=5):

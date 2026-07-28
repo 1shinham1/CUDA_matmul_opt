@@ -12,7 +12,9 @@ mkdir -p "$results_dir"
 cd "$project_dir"
 
 BINARIES=(
+    bin/00_attention_naive
     bin/01_flash_tc_naive
+    bin/02_flash_tc_async
 )
 
 for bin in "${BINARIES[@]}"; do

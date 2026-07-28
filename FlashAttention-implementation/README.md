@@ -68,15 +68,6 @@ Q/K/V를 shared memory 타일로 순회하는 tiling + online softmax(Algorithm 
 | 레지스터 블로킹 | V를 레지스터에 상주시켜 shared memory 재읽기를 줄임 |
 | K/V 버퍼 공유 | K와 V가 같은 shared memory 공간을 시분할로 재사용 (smem footprint 절감) |
 
-**주의 — occupancy 함정**: 이전 시도에서 warp-tiling과 double buffering만
-먼저 넣었을 때, KV 타일 확장(16→64)이 shared memory 사용량을 늘려
-(RTX 4090 SM당 가용 102,400B 기준) SM당 동시 상주 가능한 블록 수가
-2개→1개로 줄었고, 그 결과 "sync당 텐서 코어 작업량 4배" 이득을
-occupancy 손실이 잡아먹어 이 baseline보다 오히려 **느려졌다**. 그래서
-다음 최적화는 warp-tiling/double-buffering을 단독으로 다시 넣기보다,
-**K/V 버퍼 공유 등으로 shared memory footprint를 먼저 줄여 occupancy를
-지키면서** 넓은 타일의 이득을 가져가는 순서로 접근하는 게 맞다.
-
 official(`official/`, FlashAttention v1.0.9)은 이 여섯 가지를 전부
 갖추고 있고(더블버퍼링은 Q 타일 대상, K/V는 `SHARE_SMEM_FOR_K_AND_V`로
 공유), 그래서 이 baseline과 6~10배 격차가 난다 — 격차 상세는

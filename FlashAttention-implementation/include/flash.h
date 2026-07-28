@@ -31,22 +31,22 @@
 
 // ─── 기본 벤치마크 설정 ────────────────────────────────────────
 // GEMM이 M=K=N=4096을 모든 커널에 고정해 공정 비교하는 것과 같은 취지로,
-// BH(batch*heads)/HEAD_DIM을 고정한다. seq_len만 sweep.
+// BH(batch*heads)/HEAD_DIM/seq_len을 전부 고정한다. seq_len sweep은 하지
+// 않는다 -- 커널 간 비교는 4096 한 점에서만 한다(comparison/compare.py도 동일).
 #define DEFAULT_BH 32
 #define DEFAULT_HEAD_DIM 64
-constexpr int WARM_UP = 3;
+// sweep을 없애 4096 한 점만 재게 되면서, 그 측정이 콜드 클럭에서 시작하게
+// 됐다 -- warmup 3회로는 부스트가 다 오르기 전에 타이밍이 끝나 실행마다
+// 6.2~6.6ms로 7%씩 흔들렸다. 한 점만 재니 warmup을 길게 잡아도 부담이 없다.
+constexpr int WARM_UP = 20;
 
 inline std::vector<int> default_seq_lens() {
-    return {128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768};
+    return {4096};
 }
 
-// seq_len이 작을수록 커널 1회 실행이 짧아 GPU 스케줄링 지터에 흔들리기 쉬우므로
-// 반복 횟수를 늘리고, 크면 이미 안정적이라 반복을 줄여 전체 벤치마크 시간을 아낀다.
-inline int iters_for(int seq_len) {
-    if (seq_len <= 1024) return 20;
-    if (seq_len <= 4096) return 10;
-    return 5;
-}
+// 커널 1회 실행이 짧을수록 GPU 스케줄링 지터에 흔들리기 쉬우므로 반복을
+// 늘린다. 아주 긴 seq_len은 1회가 이미 충분히 길어 반복을 줄여도 안정적이다.
+inline int iters_for(int seq_len) { return seq_len <= 8192 ? 20 : 5; }
 
 // ─── 메모리 사용량 추적 할당자 ──────────────────────────────────
 // FlashAttention의 O(seq_len) 메모리 특성(S/P를 HBM에 안 씀)을 정확한
