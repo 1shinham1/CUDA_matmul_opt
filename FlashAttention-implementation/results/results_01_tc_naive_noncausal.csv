@@ -1,2 +1,0 @@
-seq_len,time_ms,fma_ms,speedup_vs_fma,gflops
-4096,8.54999,28.9152,3.38189,16074.8
