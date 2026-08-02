@@ -11,14 +11,19 @@
 //
 //  이 파일이 "PTX 레벨"의 전부다. 나머지 코드는 전부 평범한 C++ 이다.
 //  wmma 로는 표현할 수 없는 것들이 여기 모여 있다:
+//    - cp.async        : gmem -> smem 비동기 복사 (레지스터를 경유하지 않음)
 //    - ldmatrix        : 워프 협동 smem 로드. fragment 레이아웃을 우리가 안다.
 //    - mma.m16n8k16    : 네이티브 텐서코어 명령. 누산기 레이아웃을 우리가 안다.
-//    - cp.async        : gmem -> smem 비동기 복사 (레지스터를 경유하지 않음)
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace mk {
 
 // ── cp.async ────────────────────────────────────────────────────────────────
+//cp.async .cg  .shared .global  .L2::128B    [dst], [src], 16;
+//   │      │      │       │         └ 프리페치 힌트
+//   │      │      └───────┴─ 목적지 공간 ← 소스 공간
+//   │      └ 캐시 정책 (.ca=L1+L2, .cg=L2만)
+//   └ 오퍼레이션                              └ 바이트 수 (4/8/16)
 
 // 16B 를 gmem 에서 smem 으로 비동기 복사한다.
 // .cg 는 L1 을 우회한다 (어차피 재사용하지 않으므로 L1 을 오염시킬 이유가 없다).
@@ -29,7 +34,7 @@ FA_DEVICE void cp_async_16B(void *smem, const void *gmem) {
                  "l"(gmem));
 }
 
-// 지금까지 발사한 cp.async 들을 하나의 그룹으로 묶는다.
+// 지금까지 issue한 cp.async 들을 하나의 그룹으로 묶는다.
 FA_DEVICE void cp_async_commit() { asm volatile("cp.async.commit_group;"); }
 
 // 가장 최근 N개 그룹만 남기고 나머지가 끝날 때까지 기다린다.
@@ -42,14 +47,22 @@ FA_DEVICE void cp_async_wait() {
     asm volatile("cp.async.wait_group %0;" ::"n"(N));
 }
 
-// 동기 버전 (kernel 들이 async 를 쓰지 않을 때 비교용으로 남겨둠)
+// 동기 버전 (kernel 들이 async 를 쓰지 않을 때 비교용)
 FA_DEVICE void copy_16B(void *dst, const void *src) {
     *reinterpret_cast<uint4 *>(dst) = *reinterpret_cast<const uint4 *>(src);
 }
 
 // ── ldmatrix ────────────────────────────────────────────────────────────────
+//ldmatrix .sync .aligned .x4 .trans .m8n8 .shared .b16   {d0..d3}, [addr];
+//            │       │     │    │      │      │      └ 원소 타입
+//            │       │     │    │      │      └ 주소 공간
+//            │       │     │    │      └ 행렬 모양
+//            │       │     │    └ 8×8 전치 (옵션)
+//            │       │     └ 행렬 몇 개 (.x1/.x2/.x4)
+//            │       └ 워프 전체가 참여해야 함(정렬 요구)
+//            └ 워프 동기 명령
 
-// smem 의 (16, 16) b16 청크를 워프 레지스터로 옮긴다 = (8,8) fragment 4개.
+// smem 의 (16, 16) b16 청크를 워프 레지스터로 옮긴다 = (8,8) fragment 4개. (16x16x4B = 512B)
 //
 // 주소 규약: lane L 이 하나의 행 주소를 제공한다.
 //   lane  0.. 7 -> 행렬 0 의 8개 행     -> d0
@@ -65,7 +78,7 @@ FA_DEVICE void ldmatrix_x4(const void *smem, uint32_t &d0, uint32_t &d1,
                  : "r"(smem_addr));
 }
 
-// 위와 같지만 각 (8,8) 행렬을 전치해서 레지스터에 담는다.
+// 위와 같지만 각 (8,8) 행렬을 traspose해서 register에 담는다.
 // V 를 (B_c, d_head) 로 저장해두고 (d_head, B_c) 로 읽을 때 쓴다.
 // -> smem 에 V^T 를 따로 만들 필요가 없다.
 FA_DEVICE void ldmatrix_x4_trans(const void *smem, uint32_t &d0, uint32_t &d1,
@@ -78,6 +91,12 @@ FA_DEVICE void ldmatrix_x4_trans(const void *smem, uint32_t &d0, uint32_t &d1,
 }
 
 // ── mma ─────────────────────────────────────────────────────────────────────
+//mma .sync .aligned .m16n8k16 .row .col .f32 .f16 .f16 .f32   D, A, B, C;
+//                       │       │    │    │    │    │    └ C 타입
+//                       │       │    │    │    └────┴ A, B 타입
+//                       │       │    │    └ D 타입
+//                       │       └────┴ A는 row-major, B는 col-major
+//                       └ M×N×K
 
 // D = A * B^T + D,   A: (16,16) b16,  B: (8,16) b16,  D: (16,8) f32
 //
@@ -87,6 +106,10 @@ FA_DEVICE void ldmatrix_x4_trans(const void *smem, uint32_t &d0, uint32_t &d1,
 //      a1 : 행 t/4 + 8, 열 (t%4)*2 + {0,1}        (       1        ,        0      )
 //      a2 : 행 t/4    , 열 (t%4)*2 + {0,1} + 8    (       0        ,        1      )
 //      a3 : 행 t/4 + 8, 열 (t%4)*2 + {0,1} + 8    (       1        ,        1      )
+//              A
+//                            열 0-7      열 8-15
+//                    행 0-7 [   a0   ]  [   a2   ]
+//                    행 8-15[   a1   ]  [   a3   ]
 //
 //   D  d0,d1 : 행 t/4    , 열 (t%4)*2 + {0,1}
 //      d2,d3 : 행 t/4 + 8, 열 (t%4)*2 + {0,1}

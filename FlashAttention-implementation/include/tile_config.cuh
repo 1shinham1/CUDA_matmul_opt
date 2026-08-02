@@ -11,12 +11,12 @@
 //        B_r = 64    B_c = 64    n_warps = 4    d_head = 128
 //        ─────────────────────────────────────────────────
 //        n_threads             = 128        (4 warps)
-//        d_frags               = 16         128 / 8
+//        d_frags               = 16         (d_head = 128) / 8
 //        qo_rows_per_warp      = 16         B_r / n_warps
-//        qo_frags              = 2          16 / 8
+//        qo_frags              = 2          (qo_rows_per_warp = 16) / 8
 //        kv_frags              = 8          B_c / 8      <- "계산" 단위
 //        kv_rows_per_warp      = 16         B_c / n_warps
-//        smem_bytes            = 49152      (B_r + 2*B_c) * 128 * 2  = 48 KB
+//        smem_bytes            = 49152      (B_r + 2 * B_c) * (d_head = 128) * 2  = 48 KB
 //
 //  >>> 워프 분업이 Q/O 와 K/V 에서 다르다. 이게 이 커널의 핵심 설계다. <<<
 //
@@ -29,7 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 namespace mk {
-
+//TileConfig<B_r = 64, B_c = 64, n_warps = 4>   // d_head = 128 (기본값)
 template <int B_r_, int B_c_, int n_warps_, int d_head_ = 128>
 struct TileConfig {
     static constexpr int B_r = B_r_;
@@ -37,23 +37,26 @@ struct TileConfig {
     static constexpr int n_warps = n_warps_;
     static constexpr int d_head = d_head_;
 
-    static constexpr int n_threads = n_warps * WARP_SIZE;
+    static constexpr int n_threads = n_warps * WARP_SIZE; //128 (블록당 스레드)
 
     // d_head 방향 fragment 개수. QK^T 에서는 K 차원, PV 에서는 N 차원.
-    static constexpr int d_frags = d_head / FRAG;
+    static constexpr int d_frags = d_head / FRAG; //16
 
     // Q/O : 워프당 행 수와 fragment 수 (로드 범위 == 계산 범위)
-    static constexpr int qo_rows_per_warp = B_r / n_warps;
-    static constexpr int qo_frags = qo_rows_per_warp / FRAG;
+    static constexpr int qo_rows_per_warp = B_r / n_warps;  //16 (워프 하나가 담당하는 Q 행)
+    static constexpr int qo_frags = qo_rows_per_warp / FRAG; //2
 
     // K/V : 계산은 블록 전체
-    static constexpr int kv_frags = B_c / FRAG;
+    static constexpr int kv_frags = B_c / FRAG; //8
     // K/V : 로드는 워프별 자기 몫
-    static constexpr int kv_rows_per_warp = B_c / n_warps;
+    static constexpr int kv_rows_per_warp = B_c / n_warps; //16
 
-    // Q | K | V.  O 는 Q 영역을 재사용한다 (Q 는 RF 로 올라간 뒤 죽는다).
-    static constexpr int smem_bytes = (B_r + 2 * B_c) * d_head * 2;
+    // Q | K | V.  O 는 Q 영역을 재사용한다 (Q 는 RF 로 올라간 뒤 없어짐).
+    static constexpr int smem_bytes = (B_r + 2 * B_c) * d_head * 2; //48KB
 
+
+
+    // 컴파일 시점에 조건을 검사해서, 조건이 거짓이면 아예 컴파일 자체를 실패시키는 C++ 문법
     static_assert(B_r % n_warps == 0, "B_r 은 n_warps 로 나누어떨어져야 한다");
     static_assert(B_c % n_warps == 0, "B_c 는 n_warps 로 나누어떨어져야 한다");
     static_assert(qo_rows_per_warp % (2 * FRAG) == 0,

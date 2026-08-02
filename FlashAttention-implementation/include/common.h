@@ -33,7 +33,7 @@ constexpr int MMA_M_FRAGS = 2; // 16 rows
 constexpr int MMA_N_FRAGS = 1; //  8 cols
 constexpr int MMA_K_FRAGS = 2; // 16 cols
 
-// log2(e). optimized softmax (kernel 6~) 에서 스케일에 미리 곱해둔다.
+// log2(e). optimized softmax (OPT_SOFTMAX = true) 에서 스케일에 미리 곱해둔다.
 constexpr float LOG2E = 1.4426950408889634f;
 
 } // namespace mk

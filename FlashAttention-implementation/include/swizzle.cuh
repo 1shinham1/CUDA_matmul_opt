@@ -23,7 +23,7 @@
 
 namespace mk {
 
-template <bool SWIZZLE>
+template <bool SWIZZLE> //컴파일 시점의 매개변수
 FA_DEVICE int swizzle_chunk(int row, int chunk) {
     if constexpr (SWIZZLE) {
         return (row % B16_PER_16B) ^ chunk;

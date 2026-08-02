@@ -1,13 +1,22 @@
 // ═══════════════════════════════════════════════════════════════════════════
-//  Kernel 1 — Base Implementation
+//  Kernel 2 — Swizzling
 //
-//  Flash Attention 2 forward 의 가장 단순한 형태.
-//    - cp.async 는 쓰지만 발사하자마자 곧바로 기다린다 (오버랩 없음)
-//    - smem 스위즐 없음  -> ldmatrix 에서 8-way 뱅크 충돌
-//    - K, V 블록을 통째로 레지스터에 올린 뒤 mma 를 돈다
+//  kernel_1 대비 변경점:  SWIZZLE = false -> true.  그게 전부다.
+//      $ diff kernel_1.cu kernel_2.cu
 //
-//  성능: RTX4090 47.1%      [기준선: torch SDPA = 100%, seq_len=4096, fp16]
+//  성능: RTX4090 47.1% -> 95.4%   [기준선: torch SDPA = 100%, seq_len=4096, fp16]
 //
+//  ── 왜 이렇게 커지는가 ─────────────────────────────────────────────────────
+//  smem 한 행 = 128 x b16 = 256 B = 64 word. 뱅크 = (addr/4) % 32 인데
+//  64 % 32 == 0 이므로, 스위즐이 없으면 모든 행의 같은 열이 같은 뱅크에 앉는다.
+//
+//    ldmatrix.x4 는 lane 0..15 가 행 0..15 를 같은 열에서 읽는다.
+//      스위즐 X : 8개 행이 같은 4개 뱅크를 때린다 -> 8-way 충돌
+//      스위즐 O : 행 r 의 청크가 열 (r^c) 로 이동 -> 8청크가 32뱅크에 1회씩
+//
+//  주목할 점: 명령어 수는 오히려 늘어난다. SASS 기준 HMMA 128 / LDSM 72 로
+//  kernel_1 과 동일한데 LOP3 만 24 -> 119 로 증가한다. 순수하게 런타임 뱅크
+//  충돌만 사라진 결과다. (이 LOP3 오버헤드를 걷어내는 것이 다음 최적화 후보)
 // ═══════════════════════════════════════════════════════════════════════════
 
 #include <cuda_bf16.h>
@@ -29,14 +38,14 @@
 #include "launch.cuh"
 #endif
 
-namespace kernel_1 {
+namespace kernel_2 {
 using namespace mk;
 
 // ── 이 커널의 설정 ──────────────────────────────────────────────────────────
 using Cfg = TileConfig</*B_r=*/64, /*B_c=*/64, /*n_warps=*/4>;
 
 constexpr bool ASYNC = true;        // cp.async 사용 (1번부터 켜져 있다)
-constexpr bool SWIZZLE = false;     // ← kernel 2 에서 true 가 된다
+constexpr bool SWIZZLE = true;      // ★ kernel 1 대비 여기만 바뀌었다
 constexpr bool OPT_SOFTMAX = false; // exp2 융합 경로 스위치 (softmax.cuh)
 
 // ── 타일 상수 (TileConfig<64,64,4>, d_head=128) ─────────────────────────────
@@ -58,27 +67,19 @@ __global__ void flash_forward(__grid_constant__ const KernelArgs args) {
 
     // ── 이 CTA 가 담당할 (batch, head, Q 블록) ──────────────────────────────
     // grid = (seq_len/B_r, n_heads, batch)
-    // (배치 b, 헤드 h)의 텐서 시작점 잡기
     const int64_t head_off =
         static_cast<int64_t>(blockIdx.z) * args.batch_stride +
         static_cast<int64_t>(blockIdx.y) * args.head_stride;
-    //blockIdx.x가 Q 블록 번호
-    //Cfg::B_r = 64(default), args.seq_stride = hid_dim_size
     const int64_t qo_off =
         head_off + static_cast<int64_t>(blockIdx.x) * Cfg::B_r * args.seq_stride;
 
-    //Q와 O는 qo_off(= head + Q블록) : Q는 고정
-    const value_t   *gQ = static_cast<const value_t *>(args.Q) + qo_off;
-    value_t         *gO = static_cast<value_t *>(args.O) + qo_off;
-
-    //K와 V는 head_off(= head 까지만) : KV는 슬라이딩 (루프 안에서 j * kv_block_stride)
-    const value_t   *gK = static_cast<const value_t *>(args.K) + head_off;
-    const value_t   *gV = static_cast<const value_t *>(args.V) + head_off;
+    const value_t *gQ = static_cast<const value_t *>(args.Q) + qo_off;
+    value_t *gO = static_cast<value_t *>(args.O) + qo_off;
+    const value_t *gK = static_cast<const value_t *>(args.K) + head_off;
+    const value_t *gV = static_cast<const value_t *>(args.V) + head_off;
 
     // ── smem 분할: Q | K | V   (O 는 Q 영역을 재사용한다) ───────────────────
-    //동적 shared memory + 16B 정렬
     extern __shared__ __align__(16) char smem_raw[];
-    //각각의 시작 위치 포인터
     value_t *sQ = reinterpret_cast<value_t *>(smem_raw);
     value_t *sK = sQ + Cfg::B_r * D;
     value_t *sV = sK + Cfg::B_c * D;
@@ -88,62 +89,53 @@ __global__ void flash_forward(__grid_constant__ const KernelArgs args) {
     const int64_t q_rows = static_cast<int64_t>(warp) * Cfg::qo_rows_per_warp;
     const int64_t kv_rows = static_cast<int64_t>(warp) * Cfg::kv_rows_per_warp;
 
-    //gmem 쪽은 seq_stride(2048)
-    const value_t   *gQ_w = gQ + q_rows * args.seq_stride;
-    value_t         *gO_w = gO + q_rows * args.seq_stride;
-    const value_t   *gK_w = gK + kv_rows * args.seq_stride;
-    const value_t   *gV_w = gV + kv_rows * args.seq_stride;
+    const value_t *gQ_w = gQ + q_rows * args.seq_stride;
+    value_t *gO_w = gO + q_rows * args.seq_stride;
+    const value_t *gK_w = gK + kv_rows * args.seq_stride;
+    const value_t *gV_w = gV + kv_rows * args.seq_stride;
 
-    //smem 쪽은 D(128)
-    value_t         *sQ_w = sQ + q_rows * D; // 에필로그에서 sO_w 로 재사용
-    value_t         *sK_w = sK + kv_rows * D;
-    value_t         *sV_w = sV + kv_rows * D;
+    value_t *sQ_w = sQ + q_rows * D; // 에필로그에서 sO_w 로 재사용
+    value_t *sK_w = sK + kv_rows * D;
+    value_t *sV_w = sV + kv_rows * D;
 
-    //KV 블록으로 뛸 양으로, 밑에 loop에서 "gK_w + j * kv_block_stride"로 다음 KV block으로 뛸 양
     const int64_t kv_block_stride =
         static_cast<int64_t>(Cfg::B_c) * args.seq_stride;
 
     // ── 레지스터 타일 ───────────────────────────────────────────────────────
-    //uint32_t인 이유: mma/ldmatrix가 b16 2개를 32비트 레지스터 하나에 묶어서 다루기 때문.
-    // ex) rQ[2][16] = 32 레지스터 = b16 64개 = 2048 원소 / 32 lane
-    //rQ 2x16=32   rK 8x16=128   rV 16x8=128   rS 2x16=32   rP 2x8=16   rO 2x32=64
-    uint32_t    rQ[Cfg::qo_frags][Cfg::d_frags];
-    uint32_t    rK[Cfg::kv_frags][Cfg::d_frags];
-    uint32_t    rV[Cfg::d_frags][Cfg::kv_frags];
-    float       rS[Cfg::qo_frags][Cfg::kv_frags * 2];
-    uint32_t    rP[Cfg::qo_frags][Cfg::kv_frags];
-    float       rO[Cfg::qo_frags][Cfg::d_frags * 2];
+    uint32_t rQ[Cfg::qo_frags][Cfg::d_frags];
+    uint32_t rK[Cfg::kv_frags][Cfg::d_frags];
+    uint32_t rV[Cfg::d_frags][Cfg::kv_frags];
+    float rS[Cfg::qo_frags][Cfg::kv_frags * 2];
+    uint32_t rP[Cfg::qo_frags][Cfg::kv_frags];
+    float rO[Cfg::qo_frags][Cfg::d_frags * 2];
 
-    float       m[Cfg::qo_frags]; // 행별 running max
-    float       l[Cfg::qo_frags]; // 행별 running exp 합
+    float m[Cfg::qo_frags]; // 행별 running max
+    float l[Cfg::qo_frags]; // 행별 running exp 합
 
-    //초기화
     zero_accum(rO);
     FA_UNROLL
     for (int q = 0; q < Cfg::qo_frags; ++q) {
         m[q] = -INFINITY;
         l[q] = 0.0f;
     }
-    //kernel 1에서는 안곱해짐
+
     const float scale =
         rsqrtf(static_cast<float>(D)) * (OPT_SOFTMAX ? LOG2E : 1.0f);
 
     // ── 프롤로그: Q 를 gmem -> smem -> RF (커널 전체에서 딱 한 번) ──────────
     copy_rows_gmem_to_smem<Cfg::qo_rows_per_warp, D, SWIZZLE, ASYNC>(
         gQ_w, sQ_w, args.seq_stride, lane);
-    //kernel 1에서는 overlap을 의도적으로 막음
     cp_async_commit();
     cp_async_wait<0>();
     // cp_async_wait 는 "이 스레드"의 복사만 보장한다. 워프 전체가 sQ_w 를
     // 읽으므로 워프 배리어가 필요하다. (Q 는 워프별 영역이라 syncwarp 로 충분)
     __syncwarp();
-    //kernel 1에서는 SWIZZLE=false 여서 아무것도 안함
     load_fragments<D, SWIZZLE>(rQ, sQ_w, lane);
 
     // ── 메인 루프: KV 블록 하나씩 ───────────────────────────────────────────
     for (int j = 0; j < args.n_kv_blocks; ++j) {
 
-        // K 블록: gmem -> smem. 명령 실행하고 곧바로 기다린다 (오버랩 없음).
+        // K 블록: gmem -> smem. 발사하고 곧바로 기다린다 (오버랩 없음).
         copy_rows_gmem_to_smem<Cfg::kv_rows_per_warp, D, SWIZZLE, ASYNC>(
             gK_w + j * kv_block_stride, sK_w, args.seq_stride, lane);
         cp_async_commit();
@@ -154,9 +146,9 @@ __global__ void flash_forward(__grid_constant__ const KernelArgs args) {
         // S = Q K^T
         load_fragments<D, SWIZZLE>(rK, sK, lane); // 블록 전체 64행
         zero_accum(rS);
-        warp_mma<Cfg::d_frags, value_t>(rQ, rK, rS); // S = Q · Kᵀ
+        warp_mma<Cfg::d_frags, value_t>(rQ, rK, rS);
 
-        // online softmax - (m, l 갱신 + O 되돌리기)
+        // online softmax
         float m_new[Cfg::qo_frags];
         if constexpr (!OPT_SOFTMAX) {
             scale_accum(rS, scale); // 별도 FMUL 패스 (OPT_SOFTMAX 면 사라진다)
@@ -179,7 +171,7 @@ __global__ void flash_forward(__grid_constant__ const KernelArgs args) {
 
         // O += P V   (V 는 ldmatrix.trans 로 전치하며 읽는다)
         load_fragments_trans<D, SWIZZLE>(rV, sV, lane);
-        warp_mma<Cfg::kv_frags, value_t>(rP, rV, rO); // O += P · V 
+        warp_mma<Cfg::kv_frags, value_t>(rP, rV, rO);
     }
 
     // ── 에필로그 ────────────────────────────────────────────────────────────
@@ -198,15 +190,15 @@ __global__ void flash_forward(__grid_constant__ const KernelArgs args) {
         gO_w, sO_w, args.seq_stride, lane);
 }
 
-} // namespace kernel_1
+} // namespace kernel_2
 
 #ifndef MK_STANDALONE
 std::tuple<torch::Tensor, float>
-forward_1(const torch::Tensor &Q, const torch::Tensor &K,
+forward_2(const torch::Tensor &Q, const torch::Tensor &K,
           const torch::Tensor &V, std::optional<torch::Tensor> out,
           bool benchmark) {
-    return mk::launch_flash_forward<kernel_1::Cfg>(
-        &kernel_1::flash_forward<half>, &kernel_1::flash_forward<nv_bfloat16>,
+    return mk::launch_flash_forward<kernel_2::Cfg>(
+        &kernel_2::flash_forward<half>, &kernel_2::flash_forward<nv_bfloat16>,
         Q, K, V, out, benchmark);
 }
 #endif // MK_STANDALONE

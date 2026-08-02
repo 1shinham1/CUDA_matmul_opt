@@ -5,18 +5,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  Online softmax (Flash Attention 2)
 //
-//  mma 의 f32 누산기에서 "한 행"은 연속된 4개 lane 에 흩어져 있다 (lane t -> 행
+//  mma 의 f32 누산기에서 "한 row"은 연속된 4개 lane 에 흩어져 있다 (lane t -> 행
 //  t/4). 우리가 그 매핑을 알기 때문에 행 리덕션이 xor 셔플 2번으로 끝난다.
 //  wmma::fragment 는 이 매핑이 명세상 정의되어 있지 않아서, 누산기를 smem 에
 //  내렸다가 다시 올려야 한다 — KV 블록마다.
 //
 //  두 가지 softmax 경로:
 //
-//    OPT = false (kernel 1~5)
+//    OPT = false (커널 1~3 이 쓰는 기본 경로)
 //        S *= scale            <- 별도 FMUL 패스
 //        S  = exp(S - m)       <- expf 는 내부적으로 *log2(e) 후 EX2
 //
-//    OPT = true  (kernel 6~)
+//    OPT = true  (exp2 융합 경로)
 //        scale 에 log2(e) 를 미리 곱해둔다.
 //        S  = exp2(S*scale - m*scale)
 //                 ^^^^^^^^^^^^^^^^^^ FFMA 하나 + MUFU.EX2 하나로 융합된다.

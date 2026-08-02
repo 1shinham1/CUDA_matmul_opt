@@ -78,7 +78,7 @@ FA_DEVICE void copy_rows_smem_to_gmem(value_t *gmem, const value_t *smem,
 // ldmatrix.x4 한 번이 (16, 16) = 2x2 fragment 를 옮기므로 두 루프 모두 2씩 뛴다.
 //
 // k_frag_offset : smem 의 열 fragment 시작 위치.
-//   블록 전체를 한 번에 올릴 땐 0, 조각내어 올릴 땐(kernel 4~) 현재 k 위치.
+//   블록 전체를 한 번에 올릴 땐 0, 조각내어 올릴 땐 현재 k 위치.
 
 template <int COLS, bool SWIZZLE, typename value_t, int M_FRAGS, int K_FRAGS>
 FA_DEVICE void load_fragments(uint32_t (&regs)[M_FRAGS][K_FRAGS],

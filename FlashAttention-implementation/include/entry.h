@@ -5,7 +5,7 @@
 #include <optional>
 #include <tuple>
 
-// kernel_1.cu ~ kernel_7.cu 가 각각 하나씩 정의하고, bindings.cpp 가 노출한다.
+// kernel_1.cu ~ kernel_3.cu 가 각각 하나씩 정의하고, bindings.cpp 가 노출한다.
 // 반환값: (출력 텐서, 커널 실행시간 ms)
 
 #define MK_DECLARE_FORWARD(n)                                                  \
@@ -17,10 +17,6 @@
 MK_DECLARE_FORWARD(1);
 MK_DECLARE_FORWARD(2);
 MK_DECLARE_FORWARD(3);
-MK_DECLARE_FORWARD(4);
-MK_DECLARE_FORWARD(5);
-MK_DECLARE_FORWARD(6);
-MK_DECLARE_FORWARD(7);
 
 /*
 python:  my_flash.forward_1(q, k, v)
